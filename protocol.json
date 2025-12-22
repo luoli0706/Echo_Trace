@@ -1,0 +1,138 @@
+{
+  "meta": {
+    "version": "1.0.0",
+    "description": "Echo Trace WebSocket Protocol Definition",
+    "serialization": "JSON",
+    "note": "All coordinates are float64. Directions are unit vectors or angle (degrees)."
+  },
+  "packet_types": {
+    "C2S": {
+      "LOGIN_REQ": 1001,
+      "HEARTBEAT_REQ": 1002,
+      "MOVE_REQ": 2001,
+      "USE_ITEM_REQ": 2002,
+      "INTERACT_REQ": 2003,
+      "PICKUP_REQ": 2004,
+      "DROP_REQ": 2005,
+      "CHOOSE_TACTIC_REQ": 2006
+    },
+    "S2C": {
+      "LOGIN_RESP": 1001,
+      "HEARTBEAT_RESP": 1002,
+      "GAME_START_PUSH": 3001,
+      "GAME_STATE_PUSH": 3002,
+      "GAME_OVER_PUSH": 3003,
+      "ERROR_PUSH": 4001,
+      "MSG_PUSH": 4002
+    }
+  },
+  "models": {
+    "Vector2": {
+      "x": "float64",
+      "y": "float64"
+    },
+    "Item": {
+      "uid": "string (unique instance id)",
+      "id": "string (config id, e.g., 'WPN_SHOCK_T1')",
+      "type": "string (OFFENSE|SURVIVAL|RECON|SCAVENGE)",
+      "tier": "int (1-3)"
+    },
+    "PlayerState": {
+      "session_id": "string",
+      "pos": "Vector2",
+      "hp": "float64 (0-100)",
+      "max_hp": "float64",
+      "move_speed": "float64 (current effective speed)",
+      "view_radius": "float64",
+      "is_alive": "bool",
+      "tactic": "string (RECON|DEFENSE|TRAP)"
+    },
+    "Entity": {
+      "uid": "string",
+      "type": "string (PLAYER|ITEM_DROP|MOTOR|EXIT|TRAP)",
+      "pos": "Vector2",
+      "state": "int (e.g., MOTOR_PROGRESS, TRAP_ACTIVE)"
+    }
+  },
+  "packets": {
+    "C2S_LOGIN_REQ": {
+      "type": 1001,
+      "payload": {
+        "username": "string"
+      }
+    },
+    "S2C_LOGIN_RESP": {
+      "type": 1001,
+      "payload": {
+        "success": "bool",
+        "session_id": "string",
+        "config": "object (minified game_config copy)"
+      }
+    },
+    "C2S_CHOOSE_TACTIC_REQ": {
+      "type": 2006,
+      "payload": {
+        "tactic": "string (RECON|DEFENSE|TRAP)"
+      }
+    },
+    "S2C_GAME_START_PUSH": {
+      "type": 3001,
+      "payload": {
+        "map_seed": "int64",
+        "map_width": "int",
+        "map_height": "int",
+        "spawn_pos": "Vector2",
+        "inventory": "Item[]"
+      }
+    },
+    "C2S_MOVE_REQ": {
+      "type": 2001,
+      "payload": {
+        "dir": "Vector2 (normalized)",
+        "sprint": "bool (future use)"
+      }
+    },
+    "C2S_USE_ITEM_REQ": {
+      "type": 2002,
+      "payload": {
+        "item_uid": "string",
+        "target_uid": "string (optional, for attacks)",
+        "target_pos": "Vector2 (optional, for grenades/AoE)"
+      }
+    },
+    "S2C_GAME_STATE_PUSH": {
+      "type": 3002,
+      "desc": "The main sync packet. Contains everything the player can SEE or HEAR.",
+      "payload": {
+        "timestamp": "int64",
+        "seq": "int",
+        "self": {
+          "pos": "Vector2",
+          "hp": "float64",
+          "weight_pct": "float64",
+          "inventory": "Item[]",
+          "buffs": "string[] (e.g., 'SPEED_UP', 'BLEEDING')"
+        },
+        "vision": {
+          "players": "PlayerState[] (only visible ones)",
+          "entities": "Entity[] (items, motors, etc.)"
+        },
+        "sound": {
+          "events": [
+            {
+              "type": "string (FOOTSTEP|GUNSHOT|SCREAM)",
+              "dir": "Vector2 (direction to source)",
+              "intensity": "float64 (0.0-1.0)"
+            }
+          ]
+        },
+        "global_events": [
+          {
+            "type": "string (PHASE_CHANGE|MOTOR_FIXED|EXIT_OPEN|PLAYER_KILLED)",
+            "msg": "string"
+          }
+        ]
+      }
+    }
+  }
+}
