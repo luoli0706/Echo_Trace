@@ -1,4 +1,7 @@
 import pygame
+import math
+import time
+from datetime import datetime
 
 WINDOW_WIDTH = 1024
 WINDOW_HEIGHT = 768
@@ -15,43 +18,55 @@ COLOR_ENEMY = (255, 0, 60)
 COLOR_HUD_TEXT = (200, 255, 255)
 COLOR_FOG = (0, 0, 0)
 COLOR_HP_BG = (50, 0, 0)
-COLOR_HP_LOW = (255, 0, 0)
-COLOR_HP_HIGH = (0, 255, 0)
 COLOR_MENU_BG = (20, 20, 30, 230)
 COLOR_BTN = (50, 50, 60)
 COLOR_INV_BG = (30, 30, 40, 200)
+COLOR_RADAR_BG = (0, 20, 30, 200)
+COLOR_RADAR_BORDER = (0, 200, 255)
 
-# Item Type Colors
 COLOR_ITEM_OFFENSE = (255, 100, 100)
 COLOR_ITEM_SURVIVAL = (100, 255, 100)
 COLOR_ITEM_RECON = (100, 100, 255)
+
+COLOR_MOTOR_ACTIVE = (255, 255, 0)
+COLOR_MOTOR_DONE = (0, 255, 255)
+COLOR_EXIT = (0, 255, 0)
 
 class Renderer:
     def __init__(self, screen):
         self.screen = screen
         self.font = pygame.font.SysFont("segoeuiemoji", FONT_SIZE) 
-        if not self.font:
-             self.font = pygame.font.SysFont("arial", FONT_SIZE)
+        if not self.font: self.font = pygame.font.SysFont("arial", FONT_SIZE)
         
         self.hud_font = pygame.font.SysFont("consolas", 16)
+        self.time_font = pygame.font.SysFont("consolas", 24)
         self.fog_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
         
         # UI State
         self.show_settings = False
+        self.show_help = False
         self.settings_rect = pygame.Rect(WINDOW_WIDTH//2 - 150, WINDOW_HEIGHT//2 - 100, 300, 200)
-        self.gear_rect = pygame.Rect(WINDOW_WIDTH - 40, 10, 30, 30)
+        self.help_rect = pygame.Rect(WINDOW_WIDTH//2 - 300, WINDOW_HEIGHT//2 - 250, 600, 500)
+        self.gear_rect = pygame.Rect(WINDOW_WIDTH - 40, 50, 30, 30)
+        self.help_btn_rect = pygame.Rect(WINDOW_WIDTH - 80, 50, 30, 30)
+        
+        self.radar_rect = pygame.Rect(WINDOW_WIDTH - 160, WINDOW_HEIGHT - 160, 150, 150)
+        self.pulse_start_time = 0
 
     def world_to_screen(self, wx, wy, cam_x, cam_y):
         sx = (wx * GRID_SIZE) - cam_x + (WINDOW_WIDTH // 2)
         sy = (wy * GRID_SIZE) - cam_y + (WINDOW_HEIGHT // 2)
         return int(sx), int(sy)
 
+    def trigger_pulse(self):
+        self.pulse_start_time = time.time()
+
     def draw_game(self, state):
         self.screen.fill(COLOR_BG)
         cam_x = state.my_pos[0] * GRID_SIZE
         cam_y = state.my_pos[1] * GRID_SIZE
 
-        # Draw Map
+        # 1. Map
         start_col = max(0, int(state.my_pos[0] - (WINDOW_WIDTH/GRID_SIZE/2)) - 2)
         end_col = int(state.my_pos[0] + (WINDOW_WIDTH/GRID_SIZE/2)) + 2
         start_row = max(0, int(state.my_pos[1] - (WINDOW_HEIGHT/GRID_SIZE/2)) - 2)
@@ -68,25 +83,35 @@ class Renderer:
                         pygame.draw.rect(self.screen, COLOR_WALL, rect)
                         pygame.draw.rect(self.screen, COLOR_WALL_EDGE, rect, 1)
 
-        # Draw Items
+        # 2. Entities
         for ent in state.entities:
+            ex, ey = ent["pos"]["x"], ent["pos"]["y"]
+            sx, sy = self.world_to_screen(ex, ey, cam_x, cam_y)
+            
             if ent["type"] == "ITEM_DROP":
-                ex, ey = ent["pos"]["x"], ent["pos"]["y"]
-                sx, sy = self.world_to_screen(ex, ey, cam_x, cam_y)
-                
-                # Determine color based on item type if available in 'extra'
-                # Note: 'extra' might be a dict or map in JSON
-                color = (255, 255, 0)
                 item_data = ent.get("extra")
+                color = (255, 255, 0)
                 if item_data:
                     itype = item_data.get("type")
                     if itype == "OFFENSE": color = COLOR_ITEM_OFFENSE
                     elif itype == "SURVIVAL": color = COLOR_ITEM_SURVIVAL
                     elif itype == "RECON": color = COLOR_ITEM_RECON
-                
                 self.draw_text_centered("📦", sx, sy, color)
+            
+            elif ent["type"] == "MOTOR":
+                color = COLOR_MOTOR_DONE if ent["state"] == 2 else COLOR_MOTOR_ACTIVE
+                self.draw_text_centered("⚡", sx, sy, color)
+                if ent["state"] != 2:
+                    extra = ent.get("extra", {})
+                    if extra:
+                        prog = extra.get("progress", 0)
+                        max_p = extra.get("max_progress", 100)
+                        self.draw_bar(sx, sy-10, prog, max_p, (0, 255, 255))
+            
+            elif ent["type"] == "EXIT":
+                self.draw_text_centered("🚪", sx, sy, COLOR_EXIT)
 
-        # Draw Players
+        # 3. Players
         for pid, p in state.players.items():
             px, py = p["pos"]["x"], p["pos"]["y"]
             sx, sy = self.world_to_screen(px, py, cam_x, cam_y)
@@ -94,35 +119,85 @@ class Renderer:
             self.draw_text_centered("👹", sx, sy)
             self.draw_hp_bar(sx, sy - 5, p["hp"], p["max_hp"])
 
-        # Draw Self
+        # 4. Self
         sx, sy = self.world_to_screen(state.my_pos[0], state.my_pos[1], cam_x, cam_y)
         pygame.draw.circle(self.screen, COLOR_SELF, (sx + GRID_SIZE//2, sy + GRID_SIZE//2), GRID_SIZE//2 - 2)
         self.draw_text_centered("🏃", sx, sy)
         self.draw_hp_bar(sx, sy - 5, state.my_hp, 100)
 
-        # Draw Fog
+        # 5. Fog
         self.fog_surf.fill(COLOR_FOG)
         view_px = int(state.view_radius * GRID_SIZE)
         pygame.draw.circle(self.fog_surf, (0,0,0,0), (WINDOW_WIDTH//2, WINDOW_HEIGHT//2), view_px)
         self.screen.blit(self.fog_surf, (0,0))
 
-        # HUD
+        # 6. Pulse Phantoms (Through Fog)
+        for blip in state.radar_blips:
+            bx, by = blip["pos"]["x"], blip["pos"]["y"]
+            sx, sy = self.world_to_screen(bx, by, cam_x, cam_y)
+            
+            if blip["type"] == "MOTOR":
+                self.draw_text_centered("⚡", sx, sy, COLOR_MOTOR_ACTIVE)
+                # Draw a ring
+                pygame.draw.circle(self.screen, COLOR_MOTOR_ACTIVE, (sx + GRID_SIZE//2, sy + GRID_SIZE//2), GRID_SIZE, 1)
+            elif blip["type"] == "EXIT":
+                self.draw_text_centered("🚪", sx, sy, COLOR_EXIT)
+
+        # 7. UI Layers
         self.draw_hud(state)
         self.draw_inventory(state)
-        self.draw_ui()
+        self.draw_events(state)
+        self.draw_system_clock()
+        self.draw_minimap(state)
+        self.draw_ui_buttons()
+        
+        if self.show_settings: self.draw_settings_menu()
+        if self.show_help: self.draw_help_menu()
+
+    def draw_minimap(self, state):
+        # Background
+        pygame.draw.rect(self.screen, COLOR_RADAR_BG, self.radar_rect, border_radius=75)
+        pygame.draw.circle(self.screen, COLOR_RADAR_BORDER, self.radar_rect.center, 75, 2)
+        
+        # Scale: Map 32x32 -> Radar 150x150. Scale ~4.5
+        scale = 150.0 / max(state.map_width, state.map_height)
+        offset_x = self.radar_rect.centerx - (state.map_width * scale)/2
+        offset_y = self.radar_rect.centery - (state.map_height * scale)/2
+
+        # Draw Blips
+        for blip in state.radar_blips:
+            bx, by = blip["pos"]["x"], blip["pos"]["y"]
+            mx = int(offset_x + bx * scale)
+            my = int(offset_y + by * scale)
+            
+            if blip["type"] == "MOTOR":
+                pygame.draw.circle(self.screen, COLOR_MOTOR_ACTIVE, (mx, my), 3)
+            elif blip["type"] == "EXIT":
+                pygame.draw.circle(self.screen, COLOR_EXIT, (mx, my), 4)
+
+        # Draw Self
+        mx = int(offset_x + state.my_pos[0] * scale)
+        my = int(offset_y + state.my_pos[1] * scale)
+        pygame.draw.circle(self.screen, COLOR_SELF, (mx, my), 3)
+
+    # ... [Keep existing draw_bar, draw_hp_bar, draw_text_centered, draw_hud, draw_system_clock, etc.]
+    # Re-pasting them for completeness to ensure file correctness.
+    
+    def draw_bar(self, x, y, val, max_val, color):
+        width = GRID_SIZE
+        height = 4
+        pct = max(0, min(1, val / max_val)) if max_val > 0 else 0
+        pygame.draw.rect(self.screen, (50, 50, 50), (x, y, width, height))
+        pygame.draw.rect(self.screen, color, (x, y, width * pct, height))
 
     def draw_hp_bar(self, x, y, hp, max_hp):
         width = GRID_SIZE
         height = 4
         pct = max(0, min(1, hp / max_hp)) if max_hp > 0 else 0
-        
-        # Color Interpolation (Red to Green)
         r = min(255, max(0, int(255 * (1 - pct) * 2)))
         g = min(255, max(0, int(255 * pct * 2)))
-        color = (r, g, 0)
-        
         pygame.draw.rect(self.screen, COLOR_HP_BG, (x, y, width, height))
-        pygame.draw.rect(self.screen, color, (x, y, width * pct, height))
+        pygame.draw.rect(self.screen, (r, g, 0), (x, y, width * pct, height))
 
     def draw_text_centered(self, text, x, y, color=(255, 255, 255)):
         surf = self.font.render(text, True, color)
@@ -130,27 +205,41 @@ class Renderer:
         self.screen.blit(surf, rect)
 
     def draw_hud(self, state):
-        # Top Left Info
         texts = [
             f"HP: {state.my_hp:.0f}%",
             f"Pos: ({state.my_pos[0]:.1f}, {state.my_pos[1]:.1f})",
             f"View: {state.view_radius}m",
-            "Controls: WASD Move, SPACE Attack, E Pickup",
+            "Controls: WASD, E Pickup, F Fix, SPACE Atk",
         ]
         y = 10
         for t in texts:
             surf = self.hud_font.render(t, True, COLOR_HUD_TEXT)
             self.screen.blit(surf, (10, y))
             y += 20
-            
-        # Phase Indicator (Top Center)
         phase_map = {1: "SEARCH", 2: "CONFLICT", 3: "ESCAPE", 4: "ENDED"}
         phase_txt = phase_map.get(getattr(state, "phase", 1), "UNKNOWN")
-        # Note: state.phase needs to be synced from gamestate.py update_from_server
-        
-        phase_surf = self.font.render(f"PHASE: {phase_txt}", True, (255, 255, 0))
+        phase_surf = self.font.render(f"PHASE: {phase_txt} | Time: {state.time_left:.0f}", True, (255, 255, 0))
         p_rect = phase_surf.get_rect(center=(WINDOW_WIDTH//2, 30))
         self.screen.blit(phase_surf, p_rect)
+
+    def draw_system_clock(self):
+        now_str = datetime.now().strftime("%H:%M:%S")
+        surf = self.time_font.render(now_str, True, (0, 255, 255))
+        self.screen.blit(surf, (WINDOW_WIDTH - surf.get_width() - 10, 10))
+
+    def draw_ui_buttons(self):
+        pygame.draw.rect(self.screen, COLOR_BTN, self.gear_rect, border_radius=5)
+        self.draw_text_centered("⚙️", self.gear_rect.x, self.gear_rect.y)
+        pygame.draw.rect(self.screen, COLOR_BTN, self.help_btn_rect, border_radius=5)
+        self.draw_text_centered("?", self.help_btn_rect.x, self.help_btn_rect.y)
+
+    def draw_events(self, state):
+        y = 100
+        for evt in state.events:
+            txt = f"[{evt.get('type')}] {evt.get('msg')}"
+            surf = self.hud_font.render(txt, True, (255, 100, 255))
+            self.screen.blit(surf, (WINDOW_WIDTH - surf.get_width() - 10, y))
+            y += 20
 
     def draw_inventory(self, state):
         slot_size = 50
@@ -159,56 +248,67 @@ class Renderer:
         total_w = count * slot_size + (count-1) * padding
         start_x = (WINDOW_WIDTH - total_w) // 2
         y = WINDOW_HEIGHT - slot_size - 20
-        
         for i in range(count):
             rect = (start_x + i * (slot_size + padding), y, slot_size, slot_size)
             pygame.draw.rect(self.screen, COLOR_INV_BG, rect, border_radius=5)
             pygame.draw.rect(self.screen, (100, 100, 100), rect, 1, border_radius=5)
-            
             hint = self.hud_font.render(str(i+1), True, (150, 150, 150))
             self.screen.blit(hint, (rect[0]+2, rect[1]+2))
-            
             if i < len(state.my_inventory):
                 item = state.my_inventory[i]
                 itype = item.get("type", "UNKNOWN")
-                
-                # Icon Color
                 color = (200, 200, 200)
                 if itype == "OFFENSE": color = COLOR_ITEM_OFFENSE
                 elif itype == "SURVIVAL": color = COLOR_ITEM_SURVIVAL
                 elif itype == "RECON": color = COLOR_ITEM_RECON
-                
                 name_surf = self.hud_font.render(item.get("name", "???")[:4], True, color)
                 self.screen.blit(name_surf, (rect[0]+5, rect[1]+15))
 
-    def draw_ui(self):
-        # Gear Icon
-        pygame.draw.rect(self.screen, COLOR_BTN, self.gear_rect, border_radius=5)
-        self.draw_text_centered("⚙️", self.gear_rect.x, self.gear_rect.y) 
+    def draw_settings_menu(self):
+        s = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+        s.fill((0,0,0,150))
+        self.screen.blit(s, (0,0))
+        pygame.draw.rect(self.screen, COLOR_MENU_BG, self.settings_rect, border_radius=10)
+        pygame.draw.rect(self.screen, (255,255,255), self.settings_rect, 2, border_radius=10)
+        title = self.hud_font.render("SETTINGS", True, (255,255,255))
+        self.screen.blit(title, (self.settings_rect.x + 20, self.settings_rect.y + 20))
+        opts = ["Volume: [||||||  ]", "Graphics: [High]", "Quit Game"]
+        y_off = 60
+        for o in opts:
+            opt_surf = self.hud_font.render(o, True, (200,200,200))
+            self.screen.blit(opt_surf, (self.settings_rect.x + 30, self.settings_rect.y + y_off))
+            y_off += 30
 
-        # Settings Menu
-        if self.show_settings:
-            s = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
-            s.fill((0,0,0,150))
-            self.screen.blit(s, (0,0))
-            
-            pygame.draw.rect(self.screen, COLOR_MENU_BG, self.settings_rect, border_radius=10)
-            pygame.draw.rect(self.screen, (255,255,255), self.settings_rect, 2, border_radius=10)
-            
-            title = self.hud_font.render("SETTINGS", True, (255,255,255))
-            self.screen.blit(title, (self.settings_rect.x + 20, self.settings_rect.y + 20))
-            
-            opts = ["Volume: [||||||  ]", "Graphics: [High]", "Quit Game"]
-            y_off = 60
-            for o in opts:
-                opt_surf = self.hud_font.render(o, True, (200,200,200))
-                self.screen.blit(opt_surf, (self.settings_rect.x + 30, self.settings_rect.y + y_off))
-                y_off += 30
+    def draw_help_menu(self):
+        s = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+        s.fill((0,0,0,200))
+        self.screen.blit(s, (0,0))
+        pygame.draw.rect(self.screen, COLOR_MENU_BG, self.help_rect, border_radius=10)
+        pygame.draw.rect(self.screen, (0, 200, 255), self.help_rect, 2, border_radius=10)
+        title = self.font.render("ITEM ENCYCLOPEDIA", True, (0, 255, 255))
+        self.screen.blit(title, (self.help_rect.x + 20, self.help_rect.y + 20))
+        items = [
+            ("Stun Gun (Red)", "Deals 40 DMG to nearest enemy. [Range: 3m]"),
+            ("MedKit (Green)", "Heals 50 HP instantly."),
+            ("Scanner (Blue)", "Boosts View Radius by 5m for 10s."),
+            ("Motor (Yellow)", "Hold F to repair. Fix 2 to escape."),
+            ("Exit (Green)", "The way out. Opens in Phase 3.")
+        ]
+        y_off = 70
+        for name, desc in items:
+            name_surf = self.hud_font.render(name, True, (255, 255, 0))
+            desc_surf = self.hud_font.render(desc, True, (200, 200, 200))
+            self.screen.blit(name_surf, (self.help_rect.x + 30, self.help_rect.y + y_off))
+            self.screen.blit(desc_surf, (self.help_rect.x + 30, self.help_rect.y + y_off + 20))
+            y_off += 50
 
     def handle_click(self, pos):
         if self.gear_rect.collidepoint(pos):
             self.show_settings = not self.show_settings
+            self.show_help = False
             return True
-        if self.show_settings and self.settings_rect.collidepoint(pos):
+        if self.help_btn_rect.collidepoint(pos):
+            self.show_help = not self.show_help
+            self.show_settings = False
             return True
         return False

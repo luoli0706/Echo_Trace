@@ -67,15 +67,15 @@ func (c *Client) readPump() {
 					}
 				}
 			case 2002: // USE_ITEM_REQ
-				// payload: { "slot_index": 0, "target_uid": "..." }
 				if payload, ok := req["payload"].(map[string]interface{}); ok {
 					if slot, ok := payload["slot_index"].(float64); ok {
 						c.Hub.GameState.HandleUseItem(c.SessionID, int(slot))
 					} else {
-						// Fallback: Default Attack (Spacebar) -> Treat as slot -1 or handle separately
 						c.Hub.GameState.HandleAttack(c.SessionID, "")
 					}
 				}
+			case 2003: // INTERACT_REQ
+				c.Hub.GameState.HandleInteract(c.SessionID)
 			case 2004: // PICKUP_REQ
 				c.Hub.GameState.HandlePickup(c.SessionID)
 			}

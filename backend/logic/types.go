@@ -16,8 +16,13 @@ type Entity struct {
 	UID   string      `json:"uid"`
 	Type  string      `json:"type"`
 	Pos   Vector2     `json:"pos"`
-	State int         `json:"state"`
+	State int         `json:"state"` // For Motors: 0=Inactive, 1=Active, 2=Done
 	Extra interface{} `json:"extra,omitempty"` 
+}
+
+type MotorData struct {
+	Progress float64 `json:"progress"` // 0.0 to 100.0
+	MaxProgress float64 `json:"max_progress"`
 }
 
 type Player struct {
@@ -33,6 +38,9 @@ type Player struct {
 	Velocity   Vector2 `json:"-"`
 	TargetDir  Vector2 `json:"-"`
 	Inventory  []Item  `json:"inventory"`
+	
+	// Interaction State
+	ChannelingTargetUID string `json:"channeling_target"` // UID of entity being interacted with
 }
 
 type Item struct {

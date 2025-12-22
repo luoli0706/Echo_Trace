@@ -1,53 +1,68 @@
 # Echo Trace (DarkForest-Go) Alpha
 
-这是一个基于 Golang 后端和 Python (Pygame) 前端的高性能游戏 Demo。
-核心玩法是 **迷宫搜刮 + AOI 视野博弈 + 撤离机制**。
+> **Latest Update:** v0.4 - Phase Logic, Motors, and Enhanced UI.
 
-## 目录结构
+Echo Trace is a high-performance backend game demo featuring **Maze Scavenging + AOI Fog of War + Extraction Mechanics**.
+Built with **Golang** (Server) and **Python/Pygame** (Client).
+
+## 📂 Directory Structure
 ```
 Echo_Trace/
-├── backend/            # Golang 服务端
-│   ├── logic/          # 游戏核心逻辑 (Map, AOI, Physics)
-│   ├── network/        # WebSocket 网络层
-│   └── main.go         # 入口
-├── frontend/           # Python 客户端
-│   ├── client/         # 模块代码
-│   └── main.py         # 入口
-├── game_config.json    # 游戏数值配置
-├── protocol.json       # 通信协议定义
-└── README.md           # 本文档
+├── backend/            # Golang Server
+│   ├── logic/          # Core Logic (Physics, Maze, AOI, Items)
+│   ├── network/        # WebSocket & Room Management
+│   └── main.go         # Entry Point
+├── frontend/           # Python Client
+│   ├── client/         # Client Modules (Net, Render, State)
+│   └── main.py         # Entry Point
+├── game_config.json    # Shared Parameters
+├── protocol.json       # Network Protocol Schema
+└── README.md           # Documentation
 ```
 
-## 快速开始
+## 🚀 Quick Start
 
-### 1. 启动服务端
-确保已安装 Go 1.18+。
-
+### 1. Start Server
+Requires Go 1.18+.
 ```bash
 cd backend
-# 安装依赖
 go mod tidy
-# 运行
 go run main.go
 ```
-*服务端默认监听 :8080 端口。*
+*Listens on :8080 by default.*
 
-### 2. 启动客户端
-确保已安装 Python 3.10+。
-
+### 2. Start Client
+Requires Python 3.10+.
 ```bash
 cd frontend
-# 安装依赖
 pip install pygame-ce websocket-client
-# 运行
 python main.py
 ```
+*Open multiple terminals to simulate multiple players.*
 
-### 3. 操作说明
-*   **WASD:** 移动玩家
-*   **视野:** 你只能看到以自己为中心的圆圈内的内容。
-*   **目标:** 探索迷宫，避开红色鬼脸 (👹)，寻找出口。
+## 🎮 Gameplay Guide
 
-## 调试与开发
-*   修改 `game_config.json` 可以实时调整地图大小、视野半径等参数（需重启服务端生效）。
-*   可以使用 `--bot-count 10` (待实现) 来添加机器人。
+### Controls
+*   **WASD:** Move Character (🏃)
+*   **E:** Pick up Item (📦)
+*   **F:** Interact / Fix Motor (⚡) (Hold to fix)
+*   **Space:** Melee Attack / Use Weapon
+*   **1-6:** Use Inventory Item
+*   **Mouse Click:** UI Interaction (Settings ⚙️)
+
+### Phases
+1.  **SEARCH (0-120s):** Scavenge for items in the dark.
+2.  **CONFLICT:** Motors (⚡) appear. Fix 5 motors or kill rivals.
+    *   *New:* Motors pulse every 15s to reveal location.
+3.  **ESCAPE:** The Exit (🚪) opens. Reach it to win.
+
+### Features
+*   **AOI Fog of War:** You only see what's physically visible to you.
+*   **Physics:** Smooth wall-sliding collision detection (Radius: 0.25).
+*   **Items:** Offense (Red), Survival (Green), Recon (Blue).
+*   **UI:** Real-time HP bars, Phase Timer, System Clock, and Item Encyclopedia.
+
+## 🛠 Tech Stack
+*   **Server:** Go (Gorilla WebSocket), Mutex-protected GameState, Grid-based Map.
+*   **Client:** Pygame CE, Interpolated Rendering, Cyberpunk UI style.
+*   **Protocol:** JSON-over-WebSocket (Phase-driven state sync).

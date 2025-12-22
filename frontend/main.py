@@ -10,7 +10,7 @@ SERVER_URL = "ws://localhost:8080/ws"
 def main():
     pygame.init()
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-    pygame.display.set_caption("Echo Trace Client [Alpha 0.3]")
+    pygame.display.set_caption("Echo Trace Client [Alpha 0.4 - Phases]")
     clock = pygame.time.Clock()
 
     recv_q = queue.Queue()
@@ -42,6 +42,8 @@ def main():
                     net.send({"type": 2002, "payload": {"target_uid": ""}}) # Melee
                 elif event.key == pygame.K_e:
                     net.send({"type": 2004, "payload": {}}) # Pickup
+                elif event.key == pygame.K_f:
+                    net.send({"type": 2003, "payload": {}}) # Interact
                 
                 # Inventory 1-6
                 elif event.key >= pygame.K_1 and event.key <= pygame.K_6:

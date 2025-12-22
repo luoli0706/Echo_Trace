@@ -7,7 +7,6 @@ import (
 	"time"
 )
 
-// Game Phases
 const (
 	PhaseSearch   = 1
 	PhaseConflict = 2
@@ -15,10 +14,14 @@ const (
 	PhaseEnded    = 4
 )
 
-// Global Event Struct
 type GlobalEvent struct {
 	Type string `json:"type"`
 	Msg  string `json:"msg"`
+}
+
+type Blip struct {
+	Type string  `json:"type"`
+	Pos  Vector2 `json:"pos"`
 }
 
 type GameState struct {
@@ -30,7 +33,9 @@ type GameState struct {
 	Phase        int
 	PhaseTimer   float64
 	RespawnTimer float64
+	PulseTimer   float64
 	GlobalEvents []GlobalEvent
+	MotorsFixed  int
 	Mutex        sync.RWMutex
 }
 
@@ -44,11 +49,12 @@ func NewGameState(cfg *GameConfig) *GameState {
 		AOI:          NewAOIManager(cfg.Map.Width, cfg.Map.Height),
 		Phase:        PhaseSearch,
 		PhaseTimer:   float64(cfg.Phases.Phase1.Duration),
-		RespawnTimer: 10.0,
+		RespawnTimer: 5.0, // Increased Frequency
+		PulseTimer:   15.0,
+		GlobalEvents: make([]GlobalEvent, 0),
 	}
 }
 
-// AddPlayer spawns a new player
 func (gs *GameState) AddPlayer(sessionID string) *Player {
 	gs.Mutex.Lock()
 	defer gs.Mutex.Unlock()
@@ -65,27 +71,51 @@ func (gs *GameState) AddPlayer(sessionID string) *Player {
 		Inventory:  make([]Item, 0),
 	}
 	gs.Players[sessionID] = p
-	log.Printf("Player %s spawned at %v", sessionID, spawnPos)
 	return p
 }
 
-// RemovePlayer cleans up
 func (gs *GameState) RemovePlayer(sessionID string) {
 	gs.Mutex.Lock()
 	defer gs.Mutex.Unlock()
 	delete(gs.Players, sessionID)
 }
 
-// HandleInput updates player target direction
 func (gs *GameState) HandleInput(sessionID string, dir Vector2) {
 	gs.Mutex.Lock()
 	defer gs.Mutex.Unlock()
 	if p, ok := gs.Players[sessionID]; ok && p.IsAlive {
 		p.TargetDir = dir
+		if dir.X != 0 || dir.Y != 0 {
+			p.ChannelingTargetUID = ""
+		}
 	}
 }
 
-// UpdateTick runs physics and logic
+func (gs *GameState) HandleInteract(sessionID string) {
+	gs.Mutex.Lock()
+	defer gs.Mutex.Unlock()
+	
+	p, ok := gs.Players[sessionID]
+	if !ok || !p.IsAlive { return }
+
+	interactRange := 2.0
+	var targetUID = ""
+	
+	for uid, e := range gs.Entities {
+		if e.Type == EntityTypeMotor && e.State != 2 {
+			if Distance(p.Pos, e.Pos) <= interactRange {
+				targetUID = uid
+				break
+			}
+		}
+	}
+	
+	if targetUID != "" {
+		p.ChannelingTargetUID = targetUID
+		log.Printf("Player %s started fixing Motor %s", sessionID, targetUID)
+	}
+}
+
 func (gs *GameState) UpdateTick(dt float64) {
 	gs.Mutex.Lock()
 	defer gs.Mutex.Unlock()
@@ -97,32 +127,60 @@ func (gs *GameState) UpdateTick(dt float64) {
 			gs.nextPhase()
 		}
 	}
-
-	// 2. Item Respawn Logic
-	gs.RespawnTimer -= dt
-	if gs.RespawnTimer <= 0 {
-		gs.RespawnTimer = 10.0 // Check every 10s
-		// Count items
-		itemCount := 0
-		for _, e := range gs.Entities {
-			if e.Type == EntityTypeItemDrop {
-				itemCount++
-			}
-		}
-		
-		// Refill up to 20 items
-		if itemCount < 20 {
-			gs.spawnRandomItemInternal() // Use internal helper to avoid double lock if needed, or careful calling
-			log.Printf("Respawned item. Total: %d", itemCount+1)
+	
+	// 1.1 Motor Pulse Logic
+	if gs.Phase == PhaseConflict {
+		gs.PulseTimer -= dt
+		if gs.PulseTimer <= 0 {
+			gs.PulseTimer = 15.0
+			gs.addEvent("MOTOR_PULSE", "Motors are emitting a signal!")
 		}
 	}
 
-	// 3. Physics
-	playerRadius := 0.25 // Smoother collision
+	// 2. Channeling Logic
 	for _, p := range gs.Players {
-		if !p.IsAlive {
-			continue
+		if p.IsAlive && p.ChannelingTargetUID != "" {
+			if ent, ok := gs.Entities[p.ChannelingTargetUID]; ok && ent.Type == EntityTypeMotor {
+				data := ent.Extra.(MotorData)
+				data.Progress += 20.0 * dt
+				
+				if data.Progress >= data.MaxProgress {
+					data.Progress = data.MaxProgress
+					ent.State = 2 
+					gs.MotorsFixed++
+					gs.addEvent("MOTOR_FIXED", "A Motor has been repaired!")
+					p.ChannelingTargetUID = ""
+					
+					if gs.MotorsFixed >= 2 && gs.Phase == PhaseConflict {
+						gs.startEscapePhase()
+					}
+				}
+				ent.Extra = data
+				gs.Entities[p.ChannelingTargetUID] = ent
+			} else {
+				p.ChannelingTargetUID = ""
+			}
 		}
+	}
+
+	// 3. Item Respawn (Optimized)
+	gs.RespawnTimer -= dt
+	if gs.RespawnTimer <= 0 {
+		gs.RespawnTimer = 5.0 // Faster respawn check
+		itemCount := 0
+		for _, e := range gs.Entities {
+			if e.Type == EntityTypeItemDrop { itemCount++ }
+		}
+		// Higher cap
+		if itemCount < 30 {
+			gs.spawnRandomItemInternal()
+		}
+	}
+
+	// 4. Physics
+	playerRadius := 0.25
+	for _, p := range gs.Players {
+		if !p.IsAlive { continue }
 		if p.TargetDir.X != 0 || p.TargetDir.Y != 0 {
 			len := math.Sqrt(p.TargetDir.X*p.TargetDir.X + p.TargetDir.Y*p.TargetDir.Y)
 			if len > 0 {
@@ -144,11 +202,43 @@ func (gs *GameState) UpdateTick(dt float64) {
 func (gs *GameState) nextPhase() {
 	gs.Phase++
 	if gs.Phase == PhaseConflict {
-		gs.PhaseTimer = float64(gs.Config.Phases.Phase2.Duration)
-		gs.addEvent("PHASE_CHANGE", "Phase 2: Conflict Started! Motors Active.")
-	} else if gs.Phase == PhaseEscape {
 		gs.PhaseTimer = 9999 
-		gs.addEvent("PHASE_CHANGE", "Phase 3: Escape! Find the exit.")
+		gs.addEvent("PHASE_CHANGE", "Phase 2: Conflict! Fix 2 Motors to escape.")
+		gs.spawnMotors(5)
+	} else if gs.Phase == PhaseEscape {
+		gs.startEscapePhase()
+	}
+}
+
+func (gs *GameState) startEscapePhase() {
+	gs.Phase = PhaseEscape
+	gs.PhaseTimer = 120 
+	gs.addEvent("PHASE_CHANGE", "Phase 3: ESCAPE! The Exit has opened.")
+	gs.spawnExit()
+}
+
+func (gs *GameState) spawnMotors(count int) {
+	for i := 0; i < count; i++ {
+		pos := gs.Map.GetRandomSpawnPos()
+		uid := NewUID()
+		gs.Entities[uid] = Entity{
+			UID:   uid,
+			Type:  EntityTypeMotor,
+			Pos:   pos,
+			State: 0,
+			Extra: MotorData{MaxProgress: 100},
+		}
+	}
+}
+
+func (gs *GameState) spawnExit() {
+	pos := gs.Map.GetRandomSpawnPos()
+	uid := NewUID()
+	gs.Entities[uid] = Entity{
+		UID:   uid,
+		Type:  EntityTypeExit,
+		Pos:   pos,
+		State: 1, 
 	}
 }
 
@@ -173,16 +263,35 @@ func (gs *GameState) GetSnapshot(sessionID string) map[string]interface{} {
 	defer gs.Mutex.RUnlock()
 
 	p, ok := gs.Players[sessionID]
-	if !ok {
-		return nil
-	}
+	if !ok { return nil }
 
 	entSlice := make([]Entity, 0, len(gs.Entities))
 	for _, e := range gs.Entities {
 		entSlice = append(entSlice, e)
 	}
-
 	visiblePlayers, visibleEntities := gs.AOI.GetVisibleEntities(p, gs.Players, entSlice)
+
+	// Radar Logic: Calculate Blips
+	radarBlips := make([]Blip, 0)
+	
+	// Phase 2: Pulse Motors (First 5 seconds of the 15s cycle)
+	isPulseActive := gs.Phase == PhaseConflict && gs.PulseTimer > 10.0
+	
+	if isPulseActive {
+		for _, e := range gs.Entities {
+			if e.Type == EntityTypeMotor {
+				radarBlips = append(radarBlips, Blip{Type: "MOTOR", Pos: e.Pos})
+			}
+		}
+	}
+	// Phase 3: Always show Exit
+	if gs.Phase == PhaseEscape {
+		for _, e := range gs.Entities {
+			if e.Type == EntityTypeExit {
+				radarBlips = append(radarBlips, Blip{Type: "EXIT", Pos: e.Pos})
+			}
+		}
+	}
 
 	return map[string]interface{}{
 		"timestamp": 0,
@@ -194,24 +303,20 @@ func (gs *GameState) GetSnapshot(sessionID string) map[string]interface{} {
 			"players":  visiblePlayers,
 			"entities": visibleEntities,
 		},
+		"radar_blips": radarBlips,
 	}
 }
 
-// spawnRandomItemInternal is a helper that doesn't lock, assuming caller has lock
 func (gs *GameState) spawnRandomItemInternal() {
 	keys := []string{"WPN_SHOCK", "SURV_MEDKIT", "RECON_RADAR"}
 	choice := keys[time.Now().UnixNano()%3]
-	
-	// Access ItemDB from item_system.go (assuming it's exported or in same package)
 	item := ItemDB[choice]
 	item.UID = NewUID()
-	
-	entity := Entity{
+	gs.Entities[item.UID] = Entity{
 		UID:   item.UID,
 		Type:  EntityTypeItemDrop,
 		Pos:   gs.Map.GetRandomSpawnPos(),
 		State: 1, 
 		Extra: item,
 	}
-	gs.Entities[entity.UID] = entity
 }

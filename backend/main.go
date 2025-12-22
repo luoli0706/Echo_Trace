@@ -14,7 +14,7 @@ import (
 var Config logic.GameConfig
 
 func main() {
-	// Load Config
+	// 1. Load Config
 	absPath, _ := filepath.Abs("../game_config.json")
 	data, err := ioutil.ReadFile(absPath)
 	if err != nil {
@@ -24,18 +24,30 @@ func main() {
 		log.Fatalf("Parse config error: %v", err)
 	}
 
-	// Init Room
+	// 2. Init Room
 	globalRoom := network.NewRoom("alpha_1", &Config)
 	go globalRoom.Run()
 
-	// HTTP Handler
-	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+	// 3. Router Setup
+	mux := http.NewServeMux()
+	
+	// WebSocket Endpoint
+	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		network.ServeWs(globalRoom, w, r)
 	})
 
+	// Health Check Endpoint (For future load balancers/k8s)
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+
+	// 4. Start Server
 	addr := ":8080"
 	log.Printf("Echo Trace Server listening on %s", addr)
-	if err := http.ListenAndServe(addr, nil); err != nil {
+	
+	// Use the mux
+	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatal("ListenAndServe:", err)
 	}
 }

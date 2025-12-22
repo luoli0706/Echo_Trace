@@ -17,12 +17,17 @@ class GameState:
         self.phase = 1
         self.time_left = 0
         self.events = []
+        self.radar_blips = []
 
     def update_from_server(self, payload):
         # Global
         self.phase = payload.get("phase", 1)
         self.time_left = payload.get("time_left", 0)
-        self.events = payload.get("events", [])
+        evts = payload.get("events")
+        self.events = evts if evts is not None else []
+        
+        blips = payload.get("radar_blips")
+        self.radar_blips = blips if blips is not None else []
 
         if "self" in payload:
             s = payload["self"]
