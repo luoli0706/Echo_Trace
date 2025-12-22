@@ -1,12 +1,10 @@
 package logic
 
-// Vector2 represents a 2D position
 type Vector2 struct {
 	X float64 `json:"x"`
 	Y float64 `json:"y"`
 }
 
-// EntityType enum
 const (
 	EntityTypePlayer   = "PLAYER"
 	EntityTypeItemDrop = "ITEM_DROP"
@@ -14,15 +12,14 @@ const (
 	EntityTypeExit     = "EXIT"
 )
 
-// Entity represents any object in the world
 type Entity struct {
-	UID   string  `json:"uid"`
-	Type  string  `json:"type"`
-	Pos   Vector2 `json:"pos"`
-	State int     `json:"state"` // Generic state (e.g., progress)
+	UID   string      `json:"uid"`
+	Type  string      `json:"type"`
+	Pos   Vector2     `json:"pos"`
+	State int         `json:"state"`
+	Extra interface{} `json:"extra,omitempty"` 
 }
 
-// Player represents a connected user in the game simulation
 type Player struct {
 	SessionID  string  `json:"session_id"`
 	Pos        Vector2 `json:"pos"`
@@ -33,20 +30,19 @@ type Player struct {
 	IsAlive    bool    `json:"is_alive"`
 	Tactic     string  `json:"tactic"`
 	
-	// Internal state (not always synced)
-	Velocity    Vector2 `json:"-"`
-	TargetDir   Vector2 `json:"-"` // From client input
-	Inventory   []Item  `json:"-"` // Simplified for MVP
+	Velocity   Vector2 `json:"-"`
+	TargetDir  Vector2 `json:"-"`
+	Inventory  []Item  `json:"inventory"`
 }
 
-// Item simplified
 type Item struct {
-	UID  string `json:"uid"`
-	ID   string `json:"id"`
-	Type string `json:"type"`
+	UID     string `json:"uid"`
+	ID      string `json:"id"`
+	Type    string `json:"type"`
+	Name    string `json:"name"`
+	MaxUses int    `json:"max_uses"`
 }
 
-// Config structs (mirrors game_config.json)
 type GameConfig struct {
 	Server struct {
 		TickRateMs      int `json:"tick_rate_ms"`
@@ -62,4 +58,8 @@ type GameConfig struct {
 		BaseMoveSpeed  float64 `json:"base_move_speed"`
 		BaseViewRadius float64 `json:"base_view_radius"`
 	} `json:"gameplay"`
+	Phases struct {
+		Phase1 struct { Duration int `json:"duration_sec"` } `json:"phase_1_search"`
+		Phase2 struct { Duration int `json:"duration_sec"` } `json:"phase_2_conflict"`
+	} `json:"phases"`
 }

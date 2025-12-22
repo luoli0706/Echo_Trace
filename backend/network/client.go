@@ -29,7 +29,6 @@ func ServeWs(room *Room, w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 		return
 	}
-	// Simple SessionID generation (MVP)
 	sessID := fmt.Sprintf("u_%d", time.Now().UnixNano())
 
 	client := &Client{Hub: room, Conn: conn, Send: make(chan []byte, 256), SessionID: sessID}
@@ -55,7 +54,6 @@ func (c *Client) readPump() {
 			continue
 		}
 
-		// Handle Messages
 		if typeCode, ok := req["type"].(float64); ok {
 			switch int(typeCode) {
 			case 2001: // MOVE_REQ
@@ -68,15 +66,18 @@ func (c *Client) readPump() {
 						c.Hub.GameState.HandleInput(c.SessionID, dir)
 					}
 				}
-			case 2002: // USE_ITEM_REQ (Used for Attack in MVP)
-				// Simplified: Just attack nearest for now, or read target_uid
-				targetUID := ""
+			case 2002: // USE_ITEM_REQ
+				// payload: { "slot_index": 0, "target_uid": "..." }
 				if payload, ok := req["payload"].(map[string]interface{}); ok {
-					if t, ok := payload["target_uid"].(string); ok {
-						targetUID = t
+					if slot, ok := payload["slot_index"].(float64); ok {
+						c.Hub.GameState.HandleUseItem(c.SessionID, int(slot))
+					} else {
+						// Fallback: Default Attack (Spacebar) -> Treat as slot -1 or handle separately
+						c.Hub.GameState.HandleAttack(c.SessionID, "")
 					}
 				}
-				c.Hub.GameState.HandleAttack(c.SessionID, targetUID)
+			case 2004: // PICKUP_REQ
+				c.Hub.GameState.HandlePickup(c.SessionID)
 			}
 		}
 	}

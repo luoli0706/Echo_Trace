@@ -20,7 +20,7 @@ type Room struct {
 }
 
 func NewRoom(id string, cfg *logic.GameConfig) *Room {
-	return &Room{
+	r := &Room{
 		ID:         id,
 		Clients:    make(map[*Client]bool),
 		Broadcast:  make(chan []byte),
@@ -29,6 +29,13 @@ func NewRoom(id string, cfg *logic.GameConfig) *Room {
 		GameState:  logic.NewGameState(cfg),
 		Config:     cfg,
 	}
+	
+	// Spawn initial items
+	for i := 0; i < 10; i++ {
+		r.GameState.SpawnRandomItem(r.GameState.Map.GetRandomSpawnPos())
+	}
+	
+	return r
 }
 
 func (r *Room) Run() {
