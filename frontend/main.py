@@ -10,7 +10,7 @@ SERVER_URL = "ws://localhost:8080/ws"
 def main():
     pygame.init()
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-    pygame.display.set_caption("Echo Trace Client [Refactored]")
+    pygame.display.set_caption("Echo Trace Client [Alpha 0.2]")
     clock = pygame.time.Clock()
 
     recv_q = queue.Queue()
@@ -27,11 +27,24 @@ def main():
             if event.type == pygame.QUIT:
                 running = False
             
+            # Mouse Interaction
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1: # Left Click
+                    renderer.handle_click(event.pos)
+
+            # Keyboard Input
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_w: input_dir[1] = -1
                 elif event.key == pygame.K_s: input_dir[1] = 1
                 elif event.key == pygame.K_a: input_dir[0] = -1
                 elif event.key == pygame.K_d: input_dir[0] = 1
+                elif event.key == pygame.K_SPACE:
+                    # Attack Action
+                    atk_req = {
+                        "type": 2002,
+                        "payload": {"target_uid": ""} # Auto-target nearest
+                    }
+                    net.send(atk_req)
             
             if event.type == pygame.KEYUP:
                 if event.key in (pygame.K_w, pygame.K_s): input_dir[1] = 0
@@ -50,6 +63,8 @@ def main():
                 state.update_from_server(payload)
 
         # Send Input
+        # Only send if moving (save bandwidth) or keep heartbeat? 
+        # For smooth movement, sending 0,0 is important to stop.
         move_req = {
             "type": 2001, 
             "payload": {"dir": {"x": float(input_dir[0]), "y": float(input_dir[1])}}

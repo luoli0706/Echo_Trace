@@ -50,23 +50,33 @@ func (c *Client) readPump() {
 			break
 		}
 
-		// Parse Input Generic
 		var req map[string]interface{}
 		if err := json.Unmarshal(message, &req); err != nil {
 			continue
 		}
 
-		// Handle Messages (MVP: Only Move)
-		if typeCode, ok := req["type"].(float64); ok && int(typeCode) == 2001 {
-			if payload, ok := req["payload"].(map[string]interface{}); ok {
-				if dirMap, ok := payload["dir"].(map[string]interface{}); ok {
-					dir := logic.Vector2{
-						X: dirMap["x"].(float64),
-						Y: dirMap["y"].(float64),
+		// Handle Messages
+		if typeCode, ok := req["type"].(float64); ok {
+			switch int(typeCode) {
+			case 2001: // MOVE_REQ
+				if payload, ok := req["payload"].(map[string]interface{}); ok {
+					if dirMap, ok := payload["dir"].(map[string]interface{}); ok {
+						dir := logic.Vector2{
+							X: dirMap["x"].(float64),
+							Y: dirMap["y"].(float64),
+						}
+						c.Hub.GameState.HandleInput(c.SessionID, dir)
 					}
-					// Update Game State directly
-					c.Hub.GameState.HandleInput(c.SessionID, dir)
 				}
+			case 2002: // USE_ITEM_REQ (Used for Attack in MVP)
+				// Simplified: Just attack nearest for now, or read target_uid
+				targetUID := ""
+				if payload, ok := req["payload"].(map[string]interface{}); ok {
+					if t, ok := payload["target_uid"].(string); ok {
+						targetUID = t
+					}
+				}
+				c.Hub.GameState.HandleAttack(c.SessionID, targetUID)
 			}
 		}
 	}
