@@ -90,6 +90,14 @@ func (c *Client) readPump() {
 						c.Hub.GameState.HandleChooseTactic(c.SessionID, tactic)
 					}
 				}
+			case 2007: // BUY_ITEM_REQ
+				if payload, ok := req["payload"].(map[string]interface{}); ok {
+					if itemID, ok := payload["item_id"].(string); ok {
+						c.Hub.GameState.HandleBuyItem(c.SessionID, itemID)
+					}
+				}
+			case 9001: // DEV_SKIP_PHASE_REQ
+				c.Hub.GameState.HandleDevSkipPhase()
 			}
 		}
 	}

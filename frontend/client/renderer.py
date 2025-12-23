@@ -46,13 +46,25 @@ class Renderer:
         # UI State
         self.show_settings = False
         self.show_help = False
-        self.settings_rect = pygame.Rect(WINDOW_WIDTH//2 - 150, WINDOW_HEIGHT//2 - 100, 300, 200)
+        self.show_shop = False
+        self.dev_mode = False
+        
+        self.settings_rect = pygame.Rect(WINDOW_WIDTH//2 - 150, WINDOW_HEIGHT//2 - 100, 300, 250)
         self.help_rect = pygame.Rect(WINDOW_WIDTH//2 - 300, WINDOW_HEIGHT//2 - 250, 600, 500)
+        self.shop_rect = pygame.Rect(WINDOW_WIDTH//2 - 200, WINDOW_HEIGHT//2 - 200, 400, 400)
+        
         self.gear_rect = pygame.Rect(WINDOW_WIDTH - 40, 50, 30, 30)
         self.help_btn_rect = pygame.Rect(WINDOW_WIDTH - 80, 50, 30, 30)
+        self.shop_btn_rect = pygame.Rect(WINDOW_WIDTH - 120, 50, 30, 30)
+        
+        self.dev_mode_rect = pygame.Rect(WINDOW_WIDTH//2 - 120, WINDOW_HEIGHT//2 + 50, 240, 30)
         
         self.radar_rect = pygame.Rect(WINDOW_WIDTH - 160, WINDOW_HEIGHT - 160, 150, 150)
         self.pulse_start_time = 0
+        
+        # Login UI
+        self.name_input_text = ""
+        self.login_active = True
 
     def world_to_screen(self, wx, wy, cam_x, cam_y):
         sx = (wx * GRID_SIZE) - cam_x + (WINDOW_WIDTH // 2)
@@ -63,6 +75,10 @@ class Renderer:
         self.pulse_start_time = time.time()
 
     def draw_game(self, state):
+        if self.login_active:
+            self.draw_login()
+            return
+
         if state.phase == 0:
             self.draw_lobby(state)
             return
@@ -139,11 +155,12 @@ class Renderer:
         self.draw_text_centered("🏃", sx, sy)
         self.draw_hp_bar(sx, sy - 5, state.my_hp, 100)
 
-        # 5. Fog
-        self.fog_surf.fill(COLOR_FOG)
-        view_px = int(state.view_radius * GRID_SIZE)
-        pygame.draw.circle(self.fog_surf, (0,0,0,0), (WINDOW_WIDTH//2, WINDOW_HEIGHT//2), view_px)
-        self.screen.blit(self.fog_surf, (0,0))
+        # 5. Fog (Skip if Dev Mode)
+        if not self.dev_mode:
+            self.fog_surf.fill(COLOR_FOG)
+            view_px = int(state.view_radius * GRID_SIZE)
+            pygame.draw.circle(self.fog_surf, (0,0,0,0), (WINDOW_WIDTH//2, WINDOW_HEIGHT//2), view_px)
+            self.screen.blit(self.fog_surf, (0,0))
 
         # 6. Pulse Phantoms (Through Fog)
         for blip in state.radar_blips:
@@ -164,19 +181,12 @@ class Renderer:
         for snd in state.sound_events:
             dx, dy = snd["dir"]["x"], snd["dir"]["y"]
             intensity = snd["intensity"]
-            # Draw Ripple
-            # Position relative to center based on direction?
-            # Actually, draw on edge if far, or close if near?
-            # Let's draw an arc or arrow indicator.
-            radius = 100 + (1.0-intensity) * 200 # Closer = Smaller radius on screen? No.
-            # Let's just draw an indicator in that direction.
+            radius = 100 + (1.0-intensity) * 200 
             angle = math.atan2(dy, dx)
             ix = center_x + math.cos(angle) * 200
             iy = center_y + math.sin(angle) * 200
             
             pygame.draw.circle(self.screen, (255, 255, 255), (int(ix), int(iy)), int(10 * intensity))
-            # Text?
-            # self.draw_text_centered("👂", int(ix)-10, int(iy)-10)
 
         # 8. UI Layers
         self.draw_hud(state)
@@ -188,6 +198,23 @@ class Renderer:
         
         if self.show_settings: self.draw_settings_menu()
         if self.show_help: self.draw_help_menu()
+        if self.show_shop: self.draw_shop_menu(state)
+
+    def draw_login(self):
+        self.screen.fill(COLOR_BG)
+        title = self.font.render("ECHO TRACE - LOGIN", True, (0, 255, 255))
+        rect = title.get_rect(center=(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 50))
+        self.screen.blit(title, rect)
+        
+        input_rect = pygame.Rect(WINDOW_WIDTH//2 - 100, WINDOW_HEIGHT//2, 200, 40)
+        pygame.draw.rect(self.screen, (50, 50, 60), input_rect)
+        pygame.draw.rect(self.screen, (0, 255, 255), input_rect, 2)
+        
+        name_surf = self.font.render(self.name_input_text + "|", True, (255, 255, 255))
+        self.screen.blit(name_surf, (input_rect.x + 10, input_rect.y + 5))
+        
+        hint = self.hud_font.render("Enter Name and Press Enter", True, (150, 150, 150))
+        self.screen.blit(hint, (WINDOW_WIDTH//2 - 100, WINDOW_HEIGHT//2 + 50))
 
     def draw_lobby(self, state):
         self.screen.fill(COLOR_BG)
@@ -236,7 +263,9 @@ class Renderer:
             elif blip["type"] == "EXIT":
                 pygame.draw.circle(self.screen, COLOR_EXIT, (mx, my), 4)
             elif blip["type"] == "SUPPLY_DROP":
-                pygame.draw.circle(self.screen, COLOR_SUPPLY_DROP, (mx, my), 4)
+                # Distinct Square for Supply Drop
+                pygame.draw.rect(self.screen, COLOR_SUPPLY_DROP, (mx-4, my-4, 8, 8))
+                pygame.draw.rect(self.screen, (255, 255, 255), (mx-4, my-4, 8, 8), 1)
 
         # Draw Self
         mx = int(offset_x + state.my_pos[0] * scale)
@@ -273,8 +302,11 @@ class Renderer:
             f"FUNDS: ${state.funds}",
             f"Pos: ({state.my_pos[0]:.1f}, {state.my_pos[1]:.1f})",
             f"View: {state.view_radius}m",
-            "Controls: WASD, E Pickup, F Fix, SPACE Atk",
+            "Controls: WASD, E Pickup, F Fix, B Shop",
         ]
+        if self.dev_mode:
+            texts.append("DEV MODE: F9 Skip Phase")
+            
         y = 10
         for t in texts:
             surf = self.hud_font.render(t, True, COLOR_HUD_TEXT)
@@ -296,6 +328,8 @@ class Renderer:
         self.draw_text_centered("⚙️", self.gear_rect.x, self.gear_rect.y)
         pygame.draw.rect(self.screen, COLOR_BTN, self.help_btn_rect, border_radius=5)
         self.draw_text_centered("?", self.help_btn_rect.x, self.help_btn_rect.y)
+        pygame.draw.rect(self.screen, COLOR_BTN, self.shop_btn_rect, border_radius=5)
+        self.draw_text_centered("$", self.shop_btn_rect.x, self.shop_btn_rect.y)
 
     def draw_events(self, state):
         y = 100
@@ -336,43 +370,72 @@ class Renderer:
         pygame.draw.rect(self.screen, (255,255,255), self.settings_rect, 2, border_radius=10)
         title = self.hud_font.render("SETTINGS", True, (255,255,255))
         self.screen.blit(title, (self.settings_rect.x + 20, self.settings_rect.y + 20))
+        
+        # Dev Mode Toggle
+        dev_color = (0, 255, 0) if self.dev_mode else (100, 100, 100)
+        pygame.draw.rect(self.screen, dev_color, self.dev_mode_rect, 2)
+        dev_txt = self.hud_font.render(f"Developer Mode: {'ON' if self.dev_mode else 'OFF'}", True, (255, 255, 255))
+        self.screen.blit(dev_txt, (self.dev_mode_rect.x + 10, self.dev_mode_rect.y + 5))
+
         opts = ["Volume: [||||||  ]", "Graphics: [High]", "Quit Game"]
-        y_off = 60
+        y_off = 100
         for o in opts:
             opt_surf = self.hud_font.render(o, True, (200,200,200))
             self.screen.blit(opt_surf, (self.settings_rect.x + 30, self.settings_rect.y + y_off))
             y_off += 30
 
-    def draw_help_menu(self):
+    def draw_shop_menu(self, state):
         s = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
         s.fill((0,0,0,200))
         self.screen.blit(s, (0,0))
-        pygame.draw.rect(self.screen, COLOR_MENU_BG, self.help_rect, border_radius=10)
-        pygame.draw.rect(self.screen, (0, 200, 255), self.help_rect, 2, border_radius=10)
-        title = self.font.render("ITEM ENCYCLOPEDIA", True, (0, 255, 255))
-        self.screen.blit(title, (self.help_rect.x + 20, self.help_rect.y + 20))
+        pygame.draw.rect(self.screen, COLOR_MENU_BG, self.shop_rect, border_radius=10)
+        pygame.draw.rect(self.screen, (255, 215, 0), self.shop_rect, 2, border_radius=10)
+        
+        title = self.font.render("BLACK MARKET", True, (255, 215, 0))
+        self.screen.blit(title, (self.shop_rect.x + 20, self.shop_rect.y + 20))
+        
+        funds = self.font.render(f"Your Funds: ${state.funds}", True, (0, 255, 0))
+        self.screen.blit(funds, (self.shop_rect.x + 200, self.shop_rect.y + 20))
+
+        # Example Shop Items
         items = [
-            ("Stun Gun (Red)", "Deals 40 DMG to nearest enemy. [Range: 3m]"),
-            ("MedKit (Green)", "Heals 50 HP instantly."),
-            ("Scanner (Blue)", "Boosts View Radius by 5m for 10s."),
-            ("Motor (Yellow)", "Hold F to repair. Fix 2 to escape."),
-            ("Exit (Green)", "The way out. Opens in Phase 3.")
+            ("Stun Gun (T1)", "WPN_SHOCK", 100),
+            ("MedKit (T1)", "SURV_MEDKIT", 50),
+            ("Scanner (T1)", "RECON_RADAR", 150),
         ]
+        
         y_off = 70
-        for name, desc in items:
-            name_surf = self.hud_font.render(name, True, (255, 255, 0))
-            desc_surf = self.hud_font.render(desc, True, (200, 200, 200))
-            self.screen.blit(name_surf, (self.help_rect.x + 30, self.help_rect.y + y_off))
-            self.screen.blit(desc_surf, (self.help_rect.x + 30, self.help_rect.y + y_off + 20))
-            y_off += 50
+        for name, pid, cost in items:
+            color = (255, 255, 255)
+            if state.funds < cost: color = (100, 100, 100)
+            
+            txt = f"{name} - ${cost} [Press {items.index((name, pid, cost)) + 1}]"
+            surf = self.hud_font.render(txt, True, color)
+            self.screen.blit(surf, (self.shop_rect.x + 30, self.shop_rect.y + y_off))
+            y_off += 40
+            
+        hint = self.hud_font.render("Press 1-3 to Buy. B to Close.", True, (150, 150, 150))
+        self.screen.blit(hint, (self.shop_rect.x + 30, self.shop_rect.y + 350))
 
     def handle_click(self, pos):
         if self.gear_rect.collidepoint(pos):
             self.show_settings = not self.show_settings
             self.show_help = False
+            self.show_shop = False
             return True
         if self.help_btn_rect.collidepoint(pos):
             self.show_help = not self.show_help
             self.show_settings = False
+            self.show_shop = False
             return True
+        if self.shop_btn_rect.collidepoint(pos):
+            self.show_shop = not self.show_shop
+            self.show_settings = False
+            self.show_help = False
+            return True
+            
+        if self.show_settings and self.dev_mode_rect.collidepoint(pos):
+            self.dev_mode = not self.dev_mode
+            return True
+            
         return False

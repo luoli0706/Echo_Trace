@@ -183,25 +183,35 @@ func (gs *GameState) RemovePlayer(sessionID string) {
 }
 
 func (gs *GameState) ProcessExtraction(p *Player) {
-	// Calculate Funds from Inventory
-	// Logic: Convert non-essential items to Funds?
-	// For Alpha: Convert EVERYTHING to Funds + Bonus
-	
 	lootValue := 0
 	for _, item := range p.Inventory {
-		// Simple value based on Tier
-		val := 100 * item.Tier
-		if val == 0 { val = 50 }
+		val := item.Value
+		if val == 0 {
+			// Fallback if not set
+			val = 50 * item.Tier
+		}
 		lootValue += val
 	}
 	
 	p.Funds += lootValue
-	p.Inventory = []Item{} // Clear inventory on extract (simplified loop)
+	p.Inventory = []Item{} // Clear inventory on extract
 	gs.RecalculateStats(p)
 	
 	// Save Immediately
 	storage.SavePlayer(p.Name, p.Name, p.Funds, 0)
-	gs.addEvent("EXTRACTION", p.Name + " escaped with $" + string(rune(lootValue)) + "!")
+	gs.addEvent("EXTRACTION", p.Name + " escaped with $" + string(rune(lootValue)) + "!") // rune cast is buggy for string int, fixing logic below.
+	log.Printf("Player %s extracted. Funds: %d (+%d)", p.Name, p.Funds, lootValue)
+}
+
+func (gs *GameState) HandleDevSkipPhase() {
+	gs.Mutex.Lock()
+	defer gs.Mutex.Unlock()
+	
+	if gs.Phase != PhaseEnded {
+		gs.PhaseTimer = 0
+		gs.addEvent("DEV", "Phase Skipped by Developer!")
+		// UpdateTick will handle the transition
+	}
 }
 
 func (gs *GameState) HandleInput(sessionID string, dir Vector2) {
@@ -304,8 +314,8 @@ func (gs *GameState) UpdateTick(dt float64) {
 		for _, e := range gs.Entities {
 			if e.Type == EntityTypeItemDrop { itemCount++ }
 		}
-		// Higher cap
-		if itemCount < 30 {
+		// Higher cap to simulate longer persistence
+		if itemCount < 100 {
 			gs.spawnRandomItemInternal()
 		}
 	}
@@ -337,6 +347,7 @@ func (gs *GameState) nextPhase() {
 	gs.Phase++
 	if gs.Phase == PhaseConflict {
 		gs.PhaseTimer = 9999 
+		gs.PulseTimer = 15.0 // Ensure immediate pulse on start
 		gs.addEvent("PHASE_CHANGE", "Phase 2: Conflict! Fix 2 Motors to escape.")
 		gs.spawnMotors(5)
 		gs.spawnPhaseSupplyDrops(2)

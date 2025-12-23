@@ -63,6 +63,7 @@ type Item struct {
 	Tier    int     `json:"tier"`
 	MaxUses int     `json:"max_uses"`
 	Weight  float64 `json:"weight"`
+	Value   int     `json:"value"`
 }
 
 type GameConfig struct {

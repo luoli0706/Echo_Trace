@@ -17,6 +17,7 @@ var Config logic.GameConfig
 func main() {
 	// 0. Init Persistence
 	storage.InitDB("./game.db")
+	logic.LoadItemValues()
 
 	// 1. Load Config
 	absPath, _ := filepath.Abs("../game_config.json")

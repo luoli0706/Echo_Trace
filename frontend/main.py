@@ -13,16 +13,9 @@ def main():
     pygame.display.set_caption("Echo Trace Client [Alpha 0.4 - Phases]")
     clock = pygame.time.Clock()
 
-    # Name Input (Simple Console)
-    player_name = input("Enter your Agent Name: ").strip()
-    if not player_name: player_name = "Agent_47"
-
     recv_q = queue.Queue()
     net = NetworkClient(SERVER_URL, recv_q)
     net.start()
-    
-    # Send Login
-    net.send({"type": 1001, "payload": {"name": player_name}})
 
     state = GameState()
     renderer = Renderer(screen)
@@ -34,11 +27,44 @@ def main():
             if event.type == pygame.QUIT:
                 running = False
             
+            # Login Handling
+            if renderer.login_active:
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_RETURN:
+                        name = renderer.name_input_text.strip()
+                        if not name: name = "Agent_47"
+                        net.send({"type": 1001, "payload": {"name": name}})
+                        renderer.login_active = False
+                    elif event.key == pygame.K_BACKSPACE:
+                        renderer.name_input_text = renderer.name_input_text[:-1]
+                    else:
+                        renderer.name_input_text += event.unicode
+                continue
+
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
                     renderer.handle_click(event.pos)
 
             if event.type == pygame.KEYDOWN:
+                # Dev Shortcuts
+                if event.key == pygame.K_F9 and renderer.dev_mode:
+                    net.send({"type": 9001, "payload": {}})
+                
+                # UI Toggles
+                if event.key == pygame.K_b:
+                    renderer.show_shop = not renderer.show_shop
+                    renderer.show_settings = False
+                    renderer.show_help = False
+
+                # Shop Interactions
+                if renderer.show_shop:
+                    if event.key >= pygame.K_1 and event.key <= pygame.K_3:
+                        items = ["WPN_SHOCK", "SURV_MEDKIT", "RECON_RADAR"]
+                        idx = event.key - pygame.K_1
+                        if idx < len(items):
+                            net.send({"type": 2007, "payload": {"item_id": items[idx]}})
+                    continue # Skip movement/gameplay inputs if in shop
+
                 if event.key == pygame.K_w: input_dir[1] = -1
                 elif event.key == pygame.K_s: input_dir[1] = 1
                 elif event.key == pygame.K_a: input_dir[0] = -1
