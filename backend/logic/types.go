@@ -11,6 +11,7 @@ const (
 	EntityTypeMotor      = "MOTOR"
 	EntityTypeExit       = "EXIT"
 	EntityTypeSupplyDrop = "SUPPLY_DROP"
+	EntityTypeMerchant   = "MERCHANT"
 )
 
 type Entity struct {
@@ -50,9 +51,14 @@ type Player struct {
 	Velocity   Vector2 `json:"-"`
 	TargetDir  Vector2 `json:"-"`
 	Inventory  []Item  `json:"inventory"`
+	ShopStock  []string `json:"shop_stock"`
 	
 	// Interaction State
 	ChannelingTargetUID string `json:"channeling_target"` // UID of entity being interacted with
+	
+	// Extraction
+	IsExtracting    bool    `json:"is_extracting"`
+	ExtractionTimer float64 `json:"extraction_timer"`
 }
 
 type Item struct {

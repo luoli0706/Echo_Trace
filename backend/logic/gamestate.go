@@ -113,6 +113,88 @@ func (gs *GameState) StartGame() {
 
 	// Spawn Phase 1 Supply Drops
 	gs.spawnPhaseSupplyDrops(1)
+	
+	// Spawn Merchant
+	gs.spawnMerchant()
+}
+
+func (gs *GameState) spawnMerchant() {
+	// Center spawn
+	pos := Vector2{X: float64(gs.Map.Width)/2, Y: float64(gs.Map.Height)/2}
+	// Find walkable near center
+	for r := 0; r < 5; r++ {
+		if gs.Map.IsWalkable(pos.X+float64(r), pos.Y) {
+			pos.X += float64(r)
+			break
+		}
+	}
+	
+	uid := NewUID()
+	gs.Entities[uid] = Entity{
+		UID:   uid,
+		Type:  EntityTypeMerchant,
+		Pos:   pos,
+		State: 1,
+	}
+	log.Printf("Merchant spawned at %v", pos)
+}
+
+func (gs *GameState) HandleDropItem(sessionID string, slotIndex int) {
+	gs.Mutex.Lock()
+	defer gs.Mutex.Unlock()
+	
+	p, ok := gs.Players[sessionID]
+	if !ok || !p.IsAlive { return }
+	
+	if slotIndex < 0 || slotIndex >= len(p.Inventory) { return }
+	
+	item := p.Inventory[slotIndex]
+	// Drop logic
+	uid := NewUID()
+	gs.Entities[uid] = Entity{
+		UID:   uid,
+		Type:  EntityTypeItemDrop,
+		Pos:   p.Pos,
+		State: 1,
+		Extra: item,
+	}
+	
+	// Remove from inv
+	p.Inventory = append(p.Inventory[:slotIndex], p.Inventory[slotIndex+1:]...)
+	gs.RecalculateStats(p)
+	log.Printf("Player %s dropped %s", p.Name, item.ID)
+}
+
+func (gs *GameState) HandleSellItem(sessionID string, slotIndex int) {
+	gs.Mutex.Lock()
+	defer gs.Mutex.Unlock()
+	
+	p, ok := gs.Players[sessionID]
+	if !ok || !p.IsAlive { return }
+	
+	if slotIndex < 0 || slotIndex >= len(p.Inventory) { return }
+	
+	// Check Merchant Distance
+	nearMerchant := false
+	for _, e := range gs.Entities {
+		if e.Type == EntityTypeMerchant && Distance(p.Pos, e.Pos) <= 3.0 {
+			nearMerchant = true
+			break
+		}
+	}
+	
+	if !nearMerchant {
+		return // Must be near merchant (or maybe via Radio? Prompt says "find merchant")
+	}
+
+	item := p.Inventory[slotIndex]
+	val := item.Value
+	if val == 0 { val = 50 }
+	
+	p.Funds += val
+	p.Inventory = append(p.Inventory[:slotIndex], p.Inventory[slotIndex+1:]...)
+	gs.RecalculateStats(p)
+	log.Printf("Player %s sold %s for $%d", p.Name, item.ID, val)
 }
 
 func (gs *GameState) SetPlayerName(sessionID, name string) {
@@ -241,7 +323,7 @@ func (gs *GameState) HandleInteract(sessionID string) {
 	var targetUID = ""
 	
 	for uid, e := range gs.Entities {
-		if e.Type == EntityTypeMotor && e.State != 2 {
+		if (e.Type == EntityTypeMotor && e.State != 2) || (e.Type == EntityTypeExit && e.State == 1) {
 			if Distance(p.Pos, e.Pos) <= interactRange {
 				targetUID = uid
 				break
@@ -251,7 +333,14 @@ func (gs *GameState) HandleInteract(sessionID string) {
 	
 	if targetUID != "" {
 		p.ChannelingTargetUID = targetUID
-		log.Printf("Player %s started fixing Motor %s", sessionID, targetUID)
+		// If Exit, start extraction timer
+		if gs.Entities[targetUID].Type == EntityTypeExit {
+			p.IsExtracting = true
+			p.ExtractionTimer = 3.0 // 3 seconds
+			log.Printf("Player %s started extraction...", sessionID)
+		} else {
+			log.Printf("Player %s started fixing Motor %s", sessionID, targetUID)
+		}
 	}
 }
 
@@ -283,26 +372,43 @@ func (gs *GameState) UpdateTick(dt float64) {
 	// 2. Channeling Logic
 	for _, p := range gs.Players {
 		if p.IsAlive && p.ChannelingTargetUID != "" {
-			if ent, ok := gs.Entities[p.ChannelingTargetUID]; ok && ent.Type == EntityTypeMotor {
+			ent, ok := gs.Entities[p.ChannelingTargetUID]
+			if !ok {
+				p.ChannelingTargetUID = ""
+				p.IsExtracting = false
+				continue
+			}
+			
+			if ent.Type == EntityTypeMotor {
 				data := ent.Extra.(MotorData)
 				data.Progress += 20.0 * dt
-				
 				if data.Progress >= data.MaxProgress {
 					data.Progress = data.MaxProgress
 					ent.State = 2 
 					gs.MotorsFixed++
 					gs.addEvent("MOTOR_FIXED", "A Motor has been repaired!")
 					p.ChannelingTargetUID = ""
-					
 					if gs.MotorsFixed >= 2 && gs.Phase == PhaseConflict {
 						gs.startEscapePhase()
 					}
 				}
 				ent.Extra = data
 				gs.Entities[p.ChannelingTargetUID] = ent
-			} else {
-				p.ChannelingTargetUID = ""
+			} else if ent.Type == EntityTypeExit {
+				// Extraction Logic
+				if p.IsExtracting {
+					p.ExtractionTimer -= dt
+					if p.ExtractionTimer <= 0 {
+						// Success
+						gs.ProcessExtraction(p)
+						p.ChannelingTargetUID = ""
+						p.IsExtracting = false
+						gs.RemovePlayer(p.SessionID) // Remove from map
+					}
+				}
 			}
+		} else {
+			p.IsExtracting = false
 		}
 	}
 

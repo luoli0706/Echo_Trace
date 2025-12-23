@@ -9,8 +9,8 @@
     "debug_log_color": true
   },
   "map": {
-    "width": 32,
-    "height": 32,
+    "width": 48,
+    "height": 48,
     "_comment_size": "迷宫地图的宽和高（格子数）。",
     "aoi_grid_size": 8,
     "_comment_aoi": "AOI系统划分的格子大小，影响视野同步范围。",
