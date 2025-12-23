@@ -45,10 +45,18 @@ def main():
                 elif event.key == pygame.K_f:
                     net.send({"type": 2003, "payload": {}}) # Interact
                 
-                # Inventory 1-6
+                # Number Keys
                 elif event.key >= pygame.K_1 and event.key <= pygame.K_6:
-                    slot = event.key - pygame.K_1
-                    net.send({"type": 2002, "payload": {"slot_index": slot}})
+                    if state.phase == 0 and not state.tactic_chosen:
+                        if event.key <= pygame.K_3:
+                            tactic_map = {pygame.K_1: "RECON", pygame.K_2: "DEFENSE", pygame.K_3: "TRAP"}
+                            tactic = tactic_map.get(event.key)
+                            if tactic:
+                                net.send({"type": 2006, "payload": {"tactic": tactic}})
+                                state.tactic_chosen = True
+                    else:
+                        slot = event.key - pygame.K_1
+                        net.send({"type": 2002, "payload": {"slot_index": slot}})
             
             if event.type == pygame.KEYUP:
                 if event.key in (pygame.K_w, pygame.K_s): input_dir[1] = 0
@@ -59,17 +67,32 @@ def main():
             msg_type = msg.get("type")
             payload = msg.get("payload")
 
-            if msg_type == 3001: 
+            if msg_type == 1001:
+                state.config = payload.get("config", {})
+                state.self_id = payload.get("session_id")
+                print(f"Logged in as {state.self_id}")
+
+            elif msg_type == 3001: 
                 state.map_tiles = payload["map_tiles"]
+                state.my_pos = [payload["spawn_pos"]["x"], payload["spawn_pos"]["y"]]
+                state.my_inventory = payload.get("inventory", [])
                 print(f"Map Loaded: {len(state.map_tiles)}x{len(state.map_tiles[0])}")
             elif msg_type == 3002: 
                 state.update_from_server(payload)
 
-        move_req = {
-            "type": 2001, 
-            "payload": {"dir": {"x": float(input_dir[0]), "y": float(input_dir[1])}}
-        }
-        net.send(move_req)
+        # Input Handling for Phase 0
+        if state.phase == 0:
+             # Process events for Tactic Selection
+             # Note: We already processed events above, but we need to check specific keys here if we didn't store them.
+             # Actually, the event loop above already consumed events. We need to handle keys INSIDE the event loop.
+             pass 
+
+        if state.phase > 0:
+            move_req = {
+                "type": 2001, 
+                "payload": {"dir": {"x": float(input_dir[0]), "y": float(input_dir[1])}}
+            }
+            net.send(move_req)
 
         renderer.draw_game(state)
         pygame.display.flip()

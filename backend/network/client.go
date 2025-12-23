@@ -78,6 +78,12 @@ func (c *Client) readPump() {
 				c.Hub.GameState.HandleInteract(c.SessionID)
 			case 2004: // PICKUP_REQ
 				c.Hub.GameState.HandlePickup(c.SessionID)
+			case 2006: // CHOOSE_TACTIC_REQ
+				if payload, ok := req["payload"].(map[string]interface{}); ok {
+					if tactic, ok := payload["tactic"].(string); ok {
+						c.Hub.GameState.HandleChooseTactic(c.SessionID, tactic)
+					}
+				}
 			}
 		}
 	}

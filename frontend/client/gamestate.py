@@ -12,22 +12,34 @@ class GameState:
         self.my_hp = 100
         self.view_radius = 5.0
         self.my_inventory = []
+        self.funds = 0
         
         # Global State
-        self.phase = 1
+        self.phase = 0 # Default Init
         self.time_left = 0
         self.events = []
         self.radar_blips = []
+        self.sound_events = []
+        
+        # Client State
+        self.config = {}
+        self.tactic_chosen = False
 
     def update_from_server(self, payload):
         # Global
-        self.phase = payload.get("phase", 1)
+        self.phase = payload.get("phase", 0)
         self.time_left = payload.get("time_left", 0)
         evts = payload.get("events")
         self.events = evts if evts is not None else []
         
         blips = payload.get("radar_blips")
         self.radar_blips = blips if blips is not None else []
+        
+        snd = payload.get("sound")
+        if snd:
+            self.sound_events = snd.get("events", [])
+        else:
+            self.sound_events = []
 
         if "self" in payload:
             s = payload["self"]
@@ -35,6 +47,7 @@ class GameState:
             self.my_pos = [s["pos"]["x"], s["pos"]["y"]]
             self.my_hp = s["hp"]
             self.view_radius = s["view_radius"]
+            self.funds = s.get("funds", 0)
             inv = s.get("inventory")
             self.my_inventory = inv if inv is not None else []
 

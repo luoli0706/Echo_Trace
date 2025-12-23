@@ -8,6 +8,7 @@ import (
 )
 
 const (
+	PhaseInit     = 0
 	PhaseSearch   = 1
 	PhaseConflict = 2
 	PhaseEscape   = 3
@@ -37,6 +38,9 @@ type GameState struct {
 	GlobalEvents []GlobalEvent
 	MotorsFixed  int
 	Mutex        sync.RWMutex
+	
+	// Phase 0 State
+	StartTime    time.Time
 }
 
 func NewGameState(cfg *GameConfig) *GameState {
@@ -47,12 +51,67 @@ func NewGameState(cfg *GameConfig) *GameState {
 		Players:      make(map[string]*Player),
 		Entities:     make(map[string]Entity),
 		AOI:          NewAOIManager(cfg.Map.Width, cfg.Map.Height),
-		Phase:        PhaseSearch,
+		Phase:        PhaseInit, // Start in Init Phase
 		PhaseTimer:   float64(cfg.Phases.Phase1.Duration),
-		RespawnTimer: 5.0, // Increased Frequency
+		RespawnTimer: 5.0,
 		PulseTimer:   15.0,
 		GlobalEvents: make([]GlobalEvent, 0),
+		StartTime:    time.Now(),
 	}
+}
+
+func (gs *GameState) HandleChooseTactic(sessionID, tactic string) bool {
+	gs.Mutex.Lock()
+	defer gs.Mutex.Unlock()
+
+	if gs.Phase != PhaseInit {
+		return false
+	}
+
+	p, ok := gs.Players[sessionID]
+	if !ok {
+		return false
+	}
+	
+	// Validate Tactic
+	if tactic != "RECON" && tactic != "DEFENSE" && tactic != "TRAP" {
+		tactic = "RECON" // Default
+	}
+	p.Tactic = tactic
+	
+	// Add Starting Gear based on Tactic (Example)
+	// p.Inventory = append(p.Inventory, ...) 
+
+	// Check if we should start
+	readyCount := 0
+	for _, pl := range gs.Players {
+		if pl.Tactic != "" {
+			readyCount++
+		}
+	}
+
+	// Start condition: Min players reached (e.g. 1 for debug, 2 for real)
+	minPlayers := 1 // Debug setting
+	if readyCount >= minPlayers {
+		gs.StartGame()
+		return true
+	}
+	return false
+}
+
+func (gs *GameState) StartGame() {
+	// Assumes Lock is HELD by caller
+	gs.Phase = PhaseSearch
+	gs.PhaseTimer = float64(gs.Config.Phases.Phase1.Duration)
+	gs.addEvent("GAME_START", "The Hunt Begins! Search for supplies.")
+	
+	// Spawn Initial Items
+	for i := 0; i < 20; i++ {
+		gs.spawnRandomItemInternal()
+	}
+
+	// Spawn Phase 1 Supply Drops
+	gs.spawnPhaseSupplyDrops(1)
 }
 
 func (gs *GameState) AddPlayer(sessionID string) *Player {
@@ -67,11 +126,31 @@ func (gs *GameState) AddPlayer(sessionID string) *Player {
 		MaxHP:      100,
 		MoveSpeed:  gs.Config.Gameplay.BaseMoveSpeed,
 		ViewRadius: gs.Config.Gameplay.BaseViewRadius,
+		HearRadius: 12.0,
+		MaxWeight:  10.0,
+		Weight:     0.0,
 		IsAlive:    true,
 		Inventory:  make([]Item, 0),
+		Tactic:     "", // Not ready yet
 	}
 	gs.Players[sessionID] = p
 	return p
+}
+
+func (gs *GameState) RecalculateStats(p *Player) {
+	// Assumes Lock Held
+	totalWeight := 0.0
+	for _, item := range p.Inventory {
+		totalWeight += item.Weight
+	}
+	p.Weight = totalWeight
+	
+	ratio := p.Weight / p.MaxWeight
+	if ratio > 1.0 { ratio = 1.0 }
+	
+	// Speed penalty up to 60%
+	p.MoveSpeed = gs.Config.Gameplay.BaseMoveSpeed * (1.0 - ratio * 0.6)
+	if p.MoveSpeed < 2.0 { p.MoveSpeed = 2.0 }
 }
 
 func (gs *GameState) RemovePlayer(sessionID string) {
@@ -83,6 +162,9 @@ func (gs *GameState) RemovePlayer(sessionID string) {
 func (gs *GameState) HandleInput(sessionID string, dir Vector2) {
 	gs.Mutex.Lock()
 	defer gs.Mutex.Unlock()
+	
+	if gs.Phase == PhaseInit { return }
+
 	if p, ok := gs.Players[sessionID]; ok && p.IsAlive {
 		p.TargetDir = dir
 		if dir.X != 0 || dir.Y != 0 {
@@ -94,6 +176,8 @@ func (gs *GameState) HandleInput(sessionID string, dir Vector2) {
 func (gs *GameState) HandleInteract(sessionID string) {
 	gs.Mutex.Lock()
 	defer gs.Mutex.Unlock()
+	
+	if gs.Phase == PhaseInit { return }
 	
 	p, ok := gs.Players[sessionID]
 	if !ok || !p.IsAlive { return }
@@ -119,6 +203,10 @@ func (gs *GameState) HandleInteract(sessionID string) {
 func (gs *GameState) UpdateTick(dt float64) {
 	gs.Mutex.Lock()
 	defer gs.Mutex.Unlock()
+
+	if gs.Phase == PhaseInit {
+		return
+	}
 
 	// 1. Phase Logic
 	if gs.Phase != PhaseEnded {
@@ -178,7 +266,8 @@ func (gs *GameState) UpdateTick(dt float64) {
 	}
 
 	// 4. Physics
-	playerRadius := 0.25
+	// Optimized Collision Radius (0.5) to avoid getting stuck
+	playerRadius := 0.25 // Visual size is 0.5, so radius 0.25 fits nicely
 	for _, p := range gs.Players {
 		if !p.IsAlive { continue }
 		if p.TargetDir.X != 0 || p.TargetDir.Y != 0 {
@@ -205,8 +294,52 @@ func (gs *GameState) nextPhase() {
 		gs.PhaseTimer = 9999 
 		gs.addEvent("PHASE_CHANGE", "Phase 2: Conflict! Fix 2 Motors to escape.")
 		gs.spawnMotors(5)
+		gs.spawnPhaseSupplyDrops(2)
 	} else if gs.Phase == PhaseEscape {
 		gs.startEscapePhase()
+		gs.spawnPhaseSupplyDrops(3)
+	}
+}
+
+func (gs *GameState) spawnPhaseSupplyDrops(phase int) {
+	// Calculate Centroid
+	count := 0
+	sumX, sumY := 0.0, 0.0
+	for _, p := range gs.Players {
+		if p.IsAlive {
+			sumX += p.Pos.X
+			sumY += p.Pos.Y
+			count++
+		}
+	}
+	
+	center := gs.Map.GetRandomSpawnPos()
+	if count > 0 {
+		center = Vector2{X: sumX/float64(count), Y: sumY/float64(count)}
+	}
+
+	// Spawn 1-2 drops near center
+	dropCount := 1
+	if phase >= 2 { dropCount = 2 }
+	
+	for i := 0; i < dropCount; i++ {
+		// Random offset from center
+		offsetX := (float64(time.Now().UnixNano()%20) - 10) 
+		offsetY := (float64(time.Now().UnixNano()%20) - 10)
+		pos := Vector2{X: center.X + offsetX, Y: center.Y + offsetY}
+		
+		// Clamp to map
+		if pos.X < 1 { pos.X = 1 }
+		if pos.Y < 1 { pos.Y = 1 }
+		if pos.X >= float64(gs.Map.Width)-1 { pos.X = float64(gs.Map.Width)-1 }
+		if pos.Y >= float64(gs.Map.Height)-1 { pos.Y = float64(gs.Map.Height)-1 }
+
+		if gs.isWalkableWithRadius(pos.X, pos.Y, 0.5) {
+			gs.SpawnSupplyDrop(pos, phase)
+		} else {
+			// Fallback
+			gs.SpawnSupplyDrop(gs.Map.GetRandomSpawnPos(), phase)
+		}
 	}
 }
 
@@ -274,7 +407,7 @@ func (gs *GameState) GetSnapshot(sessionID string) map[string]interface{} {
 	// Radar Logic: Calculate Blips
 	radarBlips := make([]Blip, 0)
 	
-	// Phase 2: Pulse Motors (First 5 seconds of the 15s cycle)
+	// Phase 2: Pulse Motors
 	isPulseActive := gs.Phase == PhaseConflict && gs.PulseTimer > 10.0
 	
 	if isPulseActive {
@@ -284,11 +417,42 @@ func (gs *GameState) GetSnapshot(sessionID string) map[string]interface{} {
 			}
 		}
 	}
-	// Phase 3: Always show Exit
 	if gs.Phase == PhaseEscape {
 		for _, e := range gs.Entities {
 			if e.Type == EntityTypeExit {
 				radarBlips = append(radarBlips, Blip{Type: "EXIT", Pos: e.Pos})
+			}
+		}
+	}
+
+	// Always Show Supply Drops
+	for _, e := range gs.Entities {
+		if e.Type == EntityTypeSupplyDrop {
+			radarBlips = append(radarBlips, Blip{Type: "SUPPLY_DROP", Pos: e.Pos})
+		}
+	}
+
+	// Sound Logic (Hearing)
+	soundEvents := make([]map[string]interface{}, 0)
+	for _, other := range gs.Players {
+		if other.SessionID == sessionID || !other.IsAlive { continue }
+		
+		isMoving := other.TargetDir.X != 0 || other.TargetDir.Y != 0
+		if isMoving {
+			dist := Distance(p.Pos, other.Pos)
+			if dist <= p.HearRadius {
+				dir := Vector2{X: other.Pos.X - p.Pos.X, Y: other.Pos.Y - p.Pos.Y}
+				len := math.Sqrt(dir.X*dir.X + dir.Y*dir.Y)
+				if len > 0 { dir.X /= len; dir.Y /= len }
+				
+				intensity := 1.0 - (dist / p.HearRadius)
+				if intensity < 0 { intensity = 0 }
+
+				soundEvents = append(soundEvents, map[string]interface{}{
+					"type": "FOOTSTEP",
+					"dir": dir,
+					"intensity": intensity,
+				})
 			}
 		}
 	}
@@ -304,6 +468,9 @@ func (gs *GameState) GetSnapshot(sessionID string) map[string]interface{} {
 			"entities": visibleEntities,
 		},
 		"radar_blips": radarBlips,
+		"sound": map[string]interface{}{
+			"events": soundEvents,
+		},
 	}
 }
 

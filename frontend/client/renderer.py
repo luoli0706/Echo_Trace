@@ -27,6 +27,7 @@ COLOR_RADAR_BORDER = (0, 200, 255)
 COLOR_ITEM_OFFENSE = (255, 100, 100)
 COLOR_ITEM_SURVIVAL = (100, 255, 100)
 COLOR_ITEM_RECON = (100, 100, 255)
+COLOR_SUPPLY_DROP = (255, 0, 255)
 
 COLOR_MOTOR_ACTIVE = (255, 255, 0)
 COLOR_MOTOR_DONE = (0, 255, 255)
@@ -62,6 +63,10 @@ class Renderer:
         self.pulse_start_time = time.time()
 
     def draw_game(self, state):
+        if state.phase == 0:
+            self.draw_lobby(state)
+            return
+
         self.screen.fill(COLOR_BG)
         cam_x = state.my_pos[0] * GRID_SIZE
         cam_y = state.my_pos[1] * GRID_SIZE
@@ -98,6 +103,11 @@ class Renderer:
                     elif itype == "RECON": color = COLOR_ITEM_RECON
                 self.draw_text_centered("📦", sx, sy, color)
             
+            elif ent["type"] == "SUPPLY_DROP":
+                self.draw_text_centered("🎁", sx, sy, COLOR_SUPPLY_DROP)
+                # Draw a glow
+                pygame.draw.circle(self.screen, COLOR_SUPPLY_DROP, (sx + GRID_SIZE//2, sy + GRID_SIZE//2), GRID_SIZE, 1)
+
             elif ent["type"] == "MOTOR":
                 color = COLOR_MOTOR_DONE if ent["state"] == 2 else COLOR_MOTOR_ACTIVE
                 self.draw_text_centered("⚡", sx, sy, color)
@@ -111,17 +121,21 @@ class Renderer:
             elif ent["type"] == "EXIT":
                 self.draw_text_centered("🚪", sx, sy, COLOR_EXIT)
 
-        # 3. Players
+        # 3. Players (Smaller Size: 0.5)
+        player_draw_radius = GRID_SIZE // 4 
         for pid, p in state.players.items():
             px, py = p["pos"]["x"], p["pos"]["y"]
             sx, sy = self.world_to_screen(px, py, cam_x, cam_y)
-            pygame.draw.circle(self.screen, COLOR_ENEMY, (sx + GRID_SIZE//2, sy + GRID_SIZE//2), GRID_SIZE//2 - 2)
-            self.draw_text_centered("👹", sx, sy)
+            # Center the circle in the grid cell
+            center = (sx + GRID_SIZE//2, sy + GRID_SIZE//2)
+            pygame.draw.circle(self.screen, COLOR_ENEMY, center, player_draw_radius)
+            self.draw_text_centered("👹", sx, sy) # Text might be too big now?
             self.draw_hp_bar(sx, sy - 5, p["hp"], p["max_hp"])
 
         # 4. Self
         sx, sy = self.world_to_screen(state.my_pos[0], state.my_pos[1], cam_x, cam_y)
-        pygame.draw.circle(self.screen, COLOR_SELF, (sx + GRID_SIZE//2, sy + GRID_SIZE//2), GRID_SIZE//2 - 2)
+        center = (sx + GRID_SIZE//2, sy + GRID_SIZE//2)
+        pygame.draw.circle(self.screen, COLOR_SELF, center, player_draw_radius)
         self.draw_text_centered("🏃", sx, sy)
         self.draw_hp_bar(sx, sy - 5, state.my_hp, 100)
 
@@ -138,12 +152,33 @@ class Renderer:
             
             if blip["type"] == "MOTOR":
                 self.draw_text_centered("⚡", sx, sy, COLOR_MOTOR_ACTIVE)
-                # Draw a ring
                 pygame.draw.circle(self.screen, COLOR_MOTOR_ACTIVE, (sx + GRID_SIZE//2, sy + GRID_SIZE//2), GRID_SIZE, 1)
             elif blip["type"] == "EXIT":
                 self.draw_text_centered("🚪", sx, sy, COLOR_EXIT)
+            elif blip["type"] == "SUPPLY_DROP":
+                self.draw_text_centered("🎁", sx, sy, COLOR_SUPPLY_DROP)
+                pygame.draw.circle(self.screen, COLOR_SUPPLY_DROP, (sx + GRID_SIZE//2, sy + GRID_SIZE//2), GRID_SIZE, 1)
 
-        # 7. UI Layers
+        # 7. Sound Indicators (Hear Radius)
+        center_x, center_y = WINDOW_WIDTH//2, WINDOW_HEIGHT//2
+        for snd in state.sound_events:
+            dx, dy = snd["dir"]["x"], snd["dir"]["y"]
+            intensity = snd["intensity"]
+            # Draw Ripple
+            # Position relative to center based on direction?
+            # Actually, draw on edge if far, or close if near?
+            # Let's draw an arc or arrow indicator.
+            radius = 100 + (1.0-intensity) * 200 # Closer = Smaller radius on screen? No.
+            # Let's just draw an indicator in that direction.
+            angle = math.atan2(dy, dx)
+            ix = center_x + math.cos(angle) * 200
+            iy = center_y + math.sin(angle) * 200
+            
+            pygame.draw.circle(self.screen, (255, 255, 255), (int(ix), int(iy)), int(10 * intensity))
+            # Text?
+            # self.draw_text_centered("👂", int(ix)-10, int(iy)-10)
+
+        # 8. UI Layers
         self.draw_hud(state)
         self.draw_inventory(state)
         self.draw_events(state)
@@ -153,6 +188,32 @@ class Renderer:
         
         if self.show_settings: self.draw_settings_menu()
         if self.show_help: self.draw_help_menu()
+
+    def draw_lobby(self, state):
+        self.screen.fill(COLOR_BG)
+        
+        title = self.font.render("ECHO TRACE - TACTICAL SETUP", True, (0, 255, 255))
+        rect = title.get_rect(center=(WINDOW_WIDTH//2, 100))
+        self.screen.blit(title, rect)
+
+        if state.tactic_chosen:
+            msg = self.font.render("Waiting for other players...", True, (255, 255, 0))
+            rect = msg.get_rect(center=(WINDOW_WIDTH//2, WINDOW_HEIGHT//2))
+            self.screen.blit(msg, rect)
+        else:
+            prompt = self.hud_font.render("Select your Loadout (Press 1, 2, or 3):", True, (200, 200, 200))
+            self.screen.blit(prompt, (WINDOW_WIDTH//2 - 150, 200))
+            
+            opts = [
+                "1. RECON (Scanner + Light Armor)",
+                "2. DEFENSE (MedKit + Heavy Armor)",
+                "3. TRAP (Stun Gun + Trap Kit)"
+            ]
+            y = 250
+            for opt in opts:
+                surf = self.hud_font.render(opt, True, (255, 255, 255))
+                self.screen.blit(surf, (WINDOW_WIDTH//2 - 120, y))
+                y += 40
 
     def draw_minimap(self, state):
         # Background
@@ -174,6 +235,8 @@ class Renderer:
                 pygame.draw.circle(self.screen, COLOR_MOTOR_ACTIVE, (mx, my), 3)
             elif blip["type"] == "EXIT":
                 pygame.draw.circle(self.screen, COLOR_EXIT, (mx, my), 4)
+            elif blip["type"] == "SUPPLY_DROP":
+                pygame.draw.circle(self.screen, COLOR_SUPPLY_DROP, (mx, my), 4)
 
         # Draw Self
         mx = int(offset_x + state.my_pos[0] * scale)
@@ -207,6 +270,7 @@ class Renderer:
     def draw_hud(self, state):
         texts = [
             f"HP: {state.my_hp:.0f}%",
+            f"FUNDS: ${state.funds}",
             f"Pos: ({state.my_pos[0]:.1f}, {state.my_pos[1]:.1f})",
             f"View: {state.view_radius}m",
             "Controls: WASD, E Pickup, F Fix, SPACE Atk",

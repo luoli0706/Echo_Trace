@@ -29,12 +29,6 @@ func NewRoom(id string, cfg *logic.GameConfig) *Room {
 		GameState:  logic.NewGameState(cfg),
 		Config:     cfg,
 	}
-	
-	// Spawn initial items
-	for i := 0; i < 10; i++ {
-		r.GameState.SpawnRandomItem(r.GameState.Map.GetRandomSpawnPos())
-	}
-	
 	return r
 }
 
@@ -43,25 +37,26 @@ func (r *Room) Run() {
 	defer ticker.Stop()
 
 	log.Printf("Room %s started. Tick: %dms", r.ID, r.Config.Server.TickRateMs)
+	
+	lastPhase := logic.PhaseInit
 
 	for {
 		select {
 		case client := <-r.Register:
 			r.Mutex.Lock()
 			r.Clients[client] = true
-			p := r.GameState.AddPlayer(client.SessionID)
+			r.GameState.AddPlayer(client.SessionID)
 
-			// Send Game Start (Map Info)
-			startMsg := map[string]interface{}{
-				"type": 3001,
+			// Send Login Response
+			loginMsg := map[string]interface{}{
+				"type": 1001,
 				"payload": map[string]interface{}{
-					"map_width":  r.GameState.Map.Width,
-					"map_height": r.GameState.Map.Height,
-					"spawn_pos":  p.Pos,
-					"map_tiles":  r.GameState.Map.Tiles,
+					"success":    true,
+					"session_id": client.SessionID,
+					"config":     r.Config,
 				},
 			}
-			client.SendJSON(startMsg)
+			client.SendJSON(loginMsg)
 			r.Mutex.Unlock()
 
 		case client := <-r.Unregister:
@@ -74,6 +69,33 @@ func (r *Room) Run() {
 			r.Mutex.Unlock()
 
 		case <-ticker.C:
+			// Check Phase Transition (Init -> Search)
+			r.Mutex.RLock()
+			currentPhase := r.GameState.Phase
+			r.Mutex.RUnlock()
+
+			if lastPhase == logic.PhaseInit && currentPhase == logic.PhaseSearch {
+				log.Println("Game Started! Sending Map Info...")
+				r.Mutex.Lock()
+				for client := range r.Clients {
+					if p, ok := r.GameState.Players[client.SessionID]; ok {
+						startMsg := map[string]interface{}{
+							"type": 3001,
+							"payload": map[string]interface{}{
+								"map_width":  r.GameState.Map.Width,
+								"map_height": r.GameState.Map.Height,
+								"spawn_pos":  p.Pos,
+								"map_tiles":  r.GameState.Map.Tiles,
+								"inventory":  p.Inventory,
+							},
+						}
+						client.SendJSON(startMsg)
+					}
+				}
+				r.Mutex.Unlock()
+				lastPhase = logic.PhaseSearch
+			}
+
 			// 1. Update Physics
 			dt := float64(r.Config.Server.TickRateMs) / 1000.0
 			r.GameState.UpdateTick(dt)

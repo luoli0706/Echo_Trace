@@ -12,9 +12,58 @@ const (
 )
 
 var ItemDB = map[string]Item{
-	"WPN_SHOCK":   {ID: "WPN_SHOCK", Type: ItemTypeOffense, Name: "Stun Gun", MaxUses: 1},
-	"SURV_MEDKIT": {ID: "SURV_MEDKIT", Type: ItemTypeSurvival, Name: "MedKit", MaxUses: 1},
-	"RECON_RADAR": {ID: "RECON_RADAR", Type: ItemTypeRecon, Name: "Scanner", MaxUses: 3},
+	"WPN_SHOCK":   {ID: "WPN_SHOCK", Type: ItemTypeOffense, Name: "Stun Gun", MaxUses: 1, Weight: 2.0, Tier: 1},
+	"WPN_SHOCK_T2": {ID: "WPN_SHOCK_T2", Type: ItemTypeOffense, Name: "Taser X2", MaxUses: 2, Weight: 2.0, Tier: 2},
+	"WPN_SHOCK_T3": {ID: "WPN_SHOCK_T3", Type: ItemTypeOffense, Name: "Volt Rifle", MaxUses: 3, Weight: 3.5, Tier: 3},
+
+	"SURV_MEDKIT": {ID: "SURV_MEDKIT", Type: ItemTypeSurvival, Name: "MedKit", MaxUses: 1, Weight: 1.5, Tier: 1},
+	"SURV_MEDKIT_T2": {ID: "SURV_MEDKIT_T2", Type: ItemTypeSurvival, Name: "MedKit+", MaxUses: 2, Weight: 1.5, Tier: 2},
+
+	"RECON_RADAR": {ID: "RECON_RADAR", Type: ItemTypeRecon, Name: "Scanner", MaxUses: 3, Weight: 3.0, Tier: 1},
+	"RECON_RADAR_T2": {ID: "RECON_RADAR_T2", Type: ItemTypeRecon, Name: "Scanner Pro", MaxUses: 5, Weight: 2.5, Tier: 2},
+}
+
+func (gs *GameState) SpawnSupplyDrop(pos Vector2, phase int) {
+	// Drop Tier = Phase + 1
+	targetTier := phase + 1
+	if targetTier > 3 { targetTier = 3 }
+
+	// Collect items matching tier (fallback to lower tier if none)
+	candidates := []Item{}
+	for _, it := range ItemDB {
+		if it.Tier <= targetTier {
+			candidates = append(candidates, it)
+		}
+	}
+
+	if len(candidates) == 0 { return }
+
+	// Generate 1-3 items. Phase 3 likely gives 3.
+	count := 1 + (time.Now().UnixNano() % 3) // 1-3
+	if phase >= 3 { count = 3 }
+	
+	items := []Item{}
+	for i := 0; i < int(count); i++ {
+		idx := time.Now().UnixNano() % int64(len(candidates))
+		it := candidates[idx]
+		it.UID = NewUID()
+		items = append(items, it)
+	}
+	
+	drop := SupplyDropData{
+		Funds: 500 * targetTier,
+		Items: items,
+	}
+	
+	uid := NewUID()
+	gs.Entities[uid] = Entity{
+		UID:   uid,
+		Type:  EntityTypeSupplyDrop,
+		Pos:   pos,
+		State: 1,
+		Extra: drop,
+	}
+	log.Printf("Spawned Supply Drop at %v (Tier %d)", pos, targetTier)
 }
 
 func (gs *GameState) SpawnRandomItem(pos Vector2) {
@@ -39,6 +88,8 @@ func (gs *GameState) SpawnRandomItem(pos Vector2) {
 func (gs *GameState) HandlePickup(playerID string) {
 	gs.Mutex.Lock()
 	defer gs.Mutex.Unlock()
+	
+	if gs.Phase == PhaseInit { return }
 
 	p, ok := gs.Players[playerID]
 	if !ok || !p.IsAlive { return }
@@ -47,7 +98,7 @@ func (gs *GameState) HandlePickup(playerID string) {
 	var targetUID = ""
 
 	for uid, e := range gs.Entities {
-		if e.Type == EntityTypeItemDrop {
+		if e.Type == EntityTypeItemDrop || e.Type == EntityTypeSupplyDrop {
 			if Distance(p.Pos, e.Pos) <= pickupRange {
 				targetUID = uid
 				break
@@ -57,11 +108,32 @@ func (gs *GameState) HandlePickup(playerID string) {
 
 	if targetUID != "" {
 		ent := gs.Entities[targetUID]
-		if len(p.Inventory) < 6 {
-			item := ent.Extra.(Item)
-			p.Inventory = append(p.Inventory, item)
+		
+		if ent.Type == EntityTypeItemDrop {
+			if len(p.Inventory) < 6 {
+				item := ent.Extra.(Item)
+				p.Inventory = append(p.Inventory, item)
+				p.Funds += 50 // Pickups give small funds
+				delete(gs.Entities, targetUID)
+				gs.RecalculateStats(p)
+				log.Printf("Player %s picked up %s", playerID, item.ID)
+			}
+		} else if ent.Type == EntityTypeSupplyDrop {
+			data := ent.Extra.(SupplyDropData)
+			p.Funds += data.Funds
+			
+			// Try add all items
+			addedCount := 0
+			for _, item := range data.Items {
+				if len(p.Inventory) < 6 {
+					p.Inventory = append(p.Inventory, item)
+					addedCount++
+				}
+			}
 			delete(gs.Entities, targetUID)
-			log.Printf("Player %s picked up %s", playerID, item.ID)
+			gs.RecalculateStats(p)
+			gs.addEvent("SUPPLY_CLAIMED", "A Supply Drop has been claimed!")
+			log.Printf("Player %s claimed Supply Drop (+%d funds, %d items)", playerID, data.Funds, addedCount)
 		}
 	}
 }
@@ -69,6 +141,8 @@ func (gs *GameState) HandlePickup(playerID string) {
 func (gs *GameState) HandleUseItem(playerID string, slotIndex int) {
 	gs.Mutex.Lock()
 	defer gs.Mutex.Unlock()
+	
+	if gs.Phase == PhaseInit { return }
 
 	p, ok := gs.Players[playerID]
 	if !ok || !p.IsAlive { return }
@@ -109,6 +183,7 @@ func (gs *GameState) HandleUseItem(playerID string, slotIndex int) {
 
 	if used {
 		p.Inventory = append(p.Inventory[:slotIndex], p.Inventory[slotIndex+1:]...)
+		gs.RecalculateStats(p)
 	}
 }
 

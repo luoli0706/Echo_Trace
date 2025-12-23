@@ -6,10 +6,11 @@ type Vector2 struct {
 }
 
 const (
-	EntityTypePlayer   = "PLAYER"
-	EntityTypeItemDrop = "ITEM_DROP"
-	EntityTypeMotor    = "MOTOR"
-	EntityTypeExit     = "EXIT"
+	EntityTypePlayer     = "PLAYER"
+	EntityTypeItemDrop   = "ITEM_DROP"
+	EntityTypeMotor      = "MOTOR"
+	EntityTypeExit       = "EXIT"
+	EntityTypeSupplyDrop = "SUPPLY_DROP"
 )
 
 type Entity struct {
@@ -25,6 +26,11 @@ type MotorData struct {
 	MaxProgress float64 `json:"max_progress"`
 }
 
+type SupplyDropData struct {
+	Funds int    `json:"funds"`
+	Items []Item `json:"items"`
+}
+
 type Player struct {
 	SessionID  string  `json:"session_id"`
 	Pos        Vector2 `json:"pos"`
@@ -32,9 +38,14 @@ type Player struct {
 	MaxHP      float64 `json:"max_hp"`
 	MoveSpeed  float64 `json:"move_speed"`
 	ViewRadius float64 `json:"view_radius"`
+	HearRadius float64 `json:"hear_radius"`
 	IsAlive    bool    `json:"is_alive"`
 	Tactic     string  `json:"tactic"`
 	
+	MaxWeight  float64 `json:"max_weight"`
+	Weight     float64 `json:"weight"`
+	Funds      int     `json:"funds"`
+
 	Velocity   Vector2 `json:"-"`
 	TargetDir  Vector2 `json:"-"`
 	Inventory  []Item  `json:"inventory"`
@@ -44,11 +55,13 @@ type Player struct {
 }
 
 type Item struct {
-	UID     string `json:"uid"`
-	ID      string `json:"id"`
-	Type    string `json:"type"`
-	Name    string `json:"name"`
-	MaxUses int    `json:"max_uses"`
+	UID     string  `json:"uid"`
+	ID      string  `json:"id"`
+	Type    string  `json:"type"`
+	Name    string  `json:"name"`
+	Tier    int     `json:"tier"`
+	MaxUses int     `json:"max_uses"`
+	Weight  float64 `json:"weight"`
 }
 
 type GameConfig struct {
