@@ -59,7 +59,14 @@ def main():
                 # Shop Interactions
                 if renderer.show_shop:
                     if event.key >= pygame.K_1 and event.key <= pygame.K_3:
-                        items = ["WPN_SHOCK", "SURV_MEDKIT", "RECON_RADAR"]
+                        items = []
+                        if state.phase == 1:
+                            items = ["WPN_SHOCK", "SURV_MEDKIT", "RECON_RADAR"]
+                        elif state.phase == 2:
+                            items = ["WPN_SHOCK_T2", "SURV_MEDKIT_T2", "RECON_RADAR_T2"]
+                        elif state.phase >= 3:
+                            items = ["WPN_SHOCK_T3", "RECON_RADAR_T3", "SURV_MEDKIT_T2"]
+                            
                         idx = event.key - pygame.K_1
                         if idx < len(items):
                             net.send({"type": 2007, "payload": {"item_id": items[idx]}})
@@ -77,6 +84,7 @@ def main():
                 
                 # Number Keys
                 elif event.key >= pygame.K_1 and event.key <= pygame.K_6:
+                    mods = pygame.key.get_mods()
                     if state.phase == 0 and not state.tactic_chosen:
                         if event.key <= pygame.K_3:
                             tactic_map = {pygame.K_1: "RECON", pygame.K_2: "DEFENSE", pygame.K_3: "TRAP"}
@@ -86,7 +94,15 @@ def main():
                                 state.tactic_chosen = True
                     else:
                         slot = event.key - pygame.K_1
-                        net.send({"type": 2002, "payload": {"slot_index": slot}})
+                        if mods & pygame.KMOD_SHIFT:
+                            # Drop
+                            net.send({"type": 2005, "payload": {"slot_index": slot}})
+                        elif mods & pygame.KMOD_CTRL:
+                            # Sell
+                            net.send({"type": 2008, "payload": {"slot_index": slot}})
+                        else:
+                            # Use
+                            net.send({"type": 2002, "payload": {"slot_index": slot}})
             
             if event.type == pygame.KEYUP:
                 if event.key in (pygame.K_w, pygame.K_s): input_dir[1] = 0

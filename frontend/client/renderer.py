@@ -124,6 +124,9 @@ class Renderer:
                 # Draw a glow
                 pygame.draw.circle(self.screen, COLOR_SUPPLY_DROP, (sx + GRID_SIZE//2, sy + GRID_SIZE//2), GRID_SIZE, 1)
 
+            elif ent["type"] == "MERCHANT":
+                self.draw_text_centered("💰", sx, sy, (255, 215, 0))
+
             elif ent["type"] == "MOTOR":
                 color = COLOR_MOTOR_DONE if ent["state"] == 2 else COLOR_MOTOR_ACTIVE
                 self.draw_text_centered("⚡", sx, sy, color)
@@ -263,9 +266,9 @@ class Renderer:
             elif blip["type"] == "EXIT":
                 pygame.draw.circle(self.screen, COLOR_EXIT, (mx, my), 4)
             elif blip["type"] == "SUPPLY_DROP":
-                # Distinct Square for Supply Drop
-                pygame.draw.rect(self.screen, COLOR_SUPPLY_DROP, (mx-4, my-4, 8, 8))
-                pygame.draw.rect(self.screen, (255, 255, 255), (mx-4, my-4, 8, 8), 1)
+                pygame.draw.circle(self.screen, COLOR_SUPPLY_DROP, (mx, my), 4)
+            elif blip["type"] == "MERCHANT":
+                pygame.draw.rect(self.screen, (255, 215, 0), (mx-3, my-3, 6, 6))
 
         # Draw Self
         mx = int(offset_x + state.my_pos[0] * scale)
@@ -397,12 +400,26 @@ class Renderer:
         funds = self.font.render(f"Your Funds: ${state.funds}", True, (0, 255, 0))
         self.screen.blit(funds, (self.shop_rect.x + 200, self.shop_rect.y + 20))
 
-        # Example Shop Items
-        items = [
-            ("Stun Gun (T1)", "WPN_SHOCK", 100),
-            ("MedKit (T1)", "SURV_MEDKIT", 50),
-            ("Scanner (T1)", "RECON_RADAR", 150),
-        ]
+        # Dynamic Shop Items based on Phase
+        items = []
+        if state.phase == 1:
+            items = [
+                ("Stun Gun (T1)", "WPN_SHOCK", 100),
+                ("MedKit (T1)", "SURV_MEDKIT", 50),
+                ("Scanner (T1)", "RECON_RADAR", 150),
+            ]
+        elif state.phase == 2:
+            items = [
+                ("Taser X2 (T2)", "WPN_SHOCK_T2", 200),
+                ("MedKit+ (T2)", "SURV_MEDKIT_T2", 100),
+                ("Scanner Pro (T2)", "RECON_RADAR_T2", 300),
+            ]
+        elif state.phase >= 3:
+            items = [
+                ("Volt Rifle (T3)", "WPN_SHOCK_T3", 350),
+                ("Global Scan (T3)", "RECON_RADAR_T3", 500),
+                ("MedKit+ (T2)", "SURV_MEDKIT_T2", 100),
+            ]
         
         y_off = 70
         for name, pid, cost in items:

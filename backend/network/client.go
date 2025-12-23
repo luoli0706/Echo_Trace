@@ -84,6 +84,12 @@ func (c *Client) readPump() {
 				c.Hub.GameState.HandleInteract(c.SessionID)
 			case 2004: // PICKUP_REQ
 				c.Hub.GameState.HandlePickup(c.SessionID)
+			case 2005: // DROP_REQ
+				if payload, ok := req["payload"].(map[string]interface{}); ok {
+					if slot, ok := payload["slot_index"].(float64); ok {
+						c.Hub.GameState.HandleDropItem(c.SessionID, int(slot))
+					}
+				}
 			case 2006: // CHOOSE_TACTIC_REQ
 				if payload, ok := req["payload"].(map[string]interface{}); ok {
 					if tactic, ok := payload["tactic"].(string); ok {
@@ -94,6 +100,12 @@ func (c *Client) readPump() {
 				if payload, ok := req["payload"].(map[string]interface{}); ok {
 					if itemID, ok := payload["item_id"].(string); ok {
 						c.Hub.GameState.HandleBuyItem(c.SessionID, itemID)
+					}
+				}
+			case 2008: // SELL_REQ
+				if payload, ok := req["payload"].(map[string]interface{}); ok {
+					if slot, ok := payload["slot_index"].(float64); ok {
+						c.Hub.GameState.HandleSellItem(c.SessionID, int(slot))
 					}
 				}
 			case 9001: // DEV_SKIP_PHASE_REQ
