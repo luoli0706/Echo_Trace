@@ -33,6 +33,7 @@ type SupplyDropData struct {
 
 type Player struct {
 	SessionID  string  `json:"session_id"`
+	Name       string  `json:"name"`
 	Pos        Vector2 `json:"pos"`
 	HP         float64 `json:"hp"`
 	MaxHP      float64 `json:"max_hp"`

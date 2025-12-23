@@ -1,6 +1,7 @@
 package logic
 
 import (
+	"echo_trace_server/storage"
 	"log"
 	"math"
 	"sync"
@@ -114,6 +115,19 @@ func (gs *GameState) StartGame() {
 	gs.spawnPhaseSupplyDrops(1)
 }
 
+func (gs *GameState) SetPlayerName(sessionID, name string) {
+	gs.Mutex.Lock()
+	defer gs.Mutex.Unlock()
+
+	if p, ok := gs.Players[sessionID]; ok {
+		p.Name = name
+		// Load from DB
+		funds, _ := storage.LoadPlayer(p.Name)
+		p.Funds = funds
+		log.Printf("Player %s (%s) loaded with $%d", sessionID, name, funds)
+	}
+}
+
 func (gs *GameState) AddPlayer(sessionID string) *Player {
 	gs.Mutex.Lock()
 	defer gs.Mutex.Unlock()
@@ -121,6 +135,7 @@ func (gs *GameState) AddPlayer(sessionID string) *Player {
 	spawnPos := gs.Map.GetRandomSpawnPos()
 	p := &Player{
 		SessionID:  sessionID,
+		Name:       "Unknown",
 		Pos:        spawnPos,
 		HP:         100,
 		MaxHP:      100,
@@ -156,7 +171,37 @@ func (gs *GameState) RecalculateStats(p *Player) {
 func (gs *GameState) RemovePlayer(sessionID string) {
 	gs.Mutex.Lock()
 	defer gs.Mutex.Unlock()
-	delete(gs.Players, sessionID)
+	
+	if p, ok := gs.Players[sessionID]; ok {
+		// Save to DB
+		if p.Name != "Unknown" {
+			storage.SavePlayer(p.Name, p.Name, p.Funds, len(p.Inventory))
+			log.Printf("Saved player %s data.", p.Name)
+		}
+		delete(gs.Players, sessionID)
+	}
+}
+
+func (gs *GameState) ProcessExtraction(p *Player) {
+	// Calculate Funds from Inventory
+	// Logic: Convert non-essential items to Funds?
+	// For Alpha: Convert EVERYTHING to Funds + Bonus
+	
+	lootValue := 0
+	for _, item := range p.Inventory {
+		// Simple value based on Tier
+		val := 100 * item.Tier
+		if val == 0 { val = 50 }
+		lootValue += val
+	}
+	
+	p.Funds += lootValue
+	p.Inventory = []Item{} // Clear inventory on extract (simplified loop)
+	gs.RecalculateStats(p)
+	
+	// Save Immediately
+	storage.SavePlayer(p.Name, p.Name, p.Funds, 0)
+	gs.addEvent("EXTRACTION", p.Name + " escaped with $" + string(rune(lootValue)) + "!")
 }
 
 func (gs *GameState) HandleInput(sessionID string, dir Vector2) {

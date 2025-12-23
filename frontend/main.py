@@ -13,9 +13,16 @@ def main():
     pygame.display.set_caption("Echo Trace Client [Alpha 0.4 - Phases]")
     clock = pygame.time.Clock()
 
+    # Name Input (Simple Console)
+    player_name = input("Enter your Agent Name: ").strip()
+    if not player_name: player_name = "Agent_47"
+
     recv_q = queue.Queue()
     net = NetworkClient(SERVER_URL, recv_q)
     net.start()
+    
+    # Send Login
+    net.send({"type": 1001, "payload": {"name": player_name}})
 
     state = GameState()
     renderer = Renderer(screen)
@@ -37,9 +44,6 @@ def main():
                 elif event.key == pygame.K_a: input_dir[0] = -1
                 elif event.key == pygame.K_d: input_dir[0] = 1
                 
-                # Actions
-                elif event.key == pygame.K_SPACE:
-                    net.send({"type": 2002, "payload": {"target_uid": ""}}) # Melee
                 elif event.key == pygame.K_e:
                     net.send({"type": 2004, "payload": {}}) # Pickup
                 elif event.key == pygame.K_f:

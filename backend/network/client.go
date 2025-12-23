@@ -56,6 +56,12 @@ func (c *Client) readPump() {
 
 		if typeCode, ok := req["type"].(float64); ok {
 			switch int(typeCode) {
+			case 1001: // LOGIN_REQ
+				if payload, ok := req["payload"].(map[string]interface{}); ok {
+					if name, ok := payload["name"].(string); ok {
+						c.Hub.GameState.SetPlayerName(c.SessionID, name)
+					}
+				}
 			case 2001: // MOVE_REQ
 				if payload, ok := req["payload"].(map[string]interface{}); ok {
 					if dirMap, ok := payload["dir"].(map[string]interface{}); ok {

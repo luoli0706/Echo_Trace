@@ -1,50 +1,46 @@
 # Echo Trace 开发计划 | Development Plan
 
-> **状态 (Status):** Alpha 版实现完成 (Alpha Implementation Complete)
-> **目标 (Objective):** 使实现逻辑符合 `GameFlow.md` 和 `blueprint.md` 的设计期望。 (Align implementation with `GameFlow.md` and `blueprint.md`.)
+> **状态 (Status):** Sprint 3 进行中 (Sprint 3 In Progress)
+> **目标 (Objective):** Sprint 3 - 经济体系与博弈闭环 (Economy & Game Loop)
 
-## 🚨 核心差异修复 (Critical Gaps - High Priority)
+## 📅 Sprint 3: 经济体系与博弈闭环 (Economy & Game Loop)
 
-### 1. 后端：游戏循环与机制 (Backend: Game Loop & Mechanics)
-- [x] **实现阶段 0 (大厅/战术选择) | Implement Phase 0 (Lobby/Tactical Choice)**
-    - 增加了 `PhaseInit` 状态。游戏现在会等待玩家发送 `CHOOSE_TACTIC_REQ` 战术选择请求后再开始。
-- [x] **实现动态负重系统 | Implement Dynamic Weight System**
-    - 实现了 `RecalculateStats`（重新计算属性）和 `Weight`（负重）逻辑。玩家的移动速度现在会随着背包物品重量增加而动态降低。
-- [x] **实现声音/噪音传播 (LOD 第二层) | Implement Sound/Noise Propagation (LOD Layer 2)**
-    - 在 `GetSnapshot` 中实现了 `HearRadius`（听觉半径）校验，并能为范围内的移动玩家生成 `FOOTSTEP`（脚步声）事件。
-- [x] **高价值物资点 (空投) | High-Value Supply Drops**
-    - *逻辑:* 每个阶段开始时，在玩家中心位置刷新物资箱。
-    - *掉落:* 使用下一阶段的掉落权重。数量 1~3。
-    - *信号:* 需要在雷达上持续显示。
-- [x] **经济系统 | Economy System**
-    - *数据:* 在 `Player` 结构体中增加 `Funds` 字段。
-    - *获取:* 拾取物资时增加资金。
+### 1. 后端：经济结算与持久化 (Backend: Settlement & Persistence)
+- [x] **高价值空投逻辑 | High-Value Supply Drops**
+    - *优化:* 已实现重心刷新和物品生成。
+    - *雷达:* 已实现。
+- [x] **撤离处理 | Process Extraction**
+    - *实现:* 在 `ProcessExtraction` 中实现了基础的 "物品 -> 资金" 转换逻辑。
+    - *逻辑:* 撤离时清空背包并保存资金。
+- [x] **SQLite 持久化层 | SQLite Persistence Layer**
+    - *基础:* 已集成 SQLite。
+    - *任务:* 玩家断开连接或撤离时保存数据。
+    - *任务:* 玩家登录 (`SetPlayerName`) 时加载数据。
 
-### 2. 前端：UI 与反馈 (Frontend: UI & Feedback)
-- [x] **阶段与计时器 UI | Phase & Timer UI**
-    - 在 `draw_hud` 中实现，现在顶部会显示当前游戏阶段和剩余时间。
-- [ ] **交互进度 UI | Interaction Progress UI**
-    - *当前进度:* 在 `renderer.py` 中实现了基础进度条，但仍需进一步美化。
-- [x] **雷达/光点渲染 | Radar/Blip Rendering**
-    - 实现了 `radar_blips`（雷达光点）的渲染。
-    - 实现了声音指示器（波纹效果）的渲染，用于展示听到的脚步声方向。
-    - *新增:* 需支持 `SUPPLY_DROP` 类型的雷达显示。
-- [x] **大厅界面 | Lobby Interface**
-    - 在 `renderer.py` 中实现了 `draw_lobby`（绘制大厅）功能，支持战术倾向选择。
-- [x] **资金显示 UI | Funds Display UI**
-    - 在 HUD 中实时显示当前资金。
-- [x] **物理表现优化 | Visual Physics Optimization**
-    - 将玩家渲染大小缩小为 0.5 格，以匹配新的碰撞判定。
+### 2. 前端：交互与反馈 (Frontend: UI & Feedback)
+- [ ] **交互进度条 | Interaction Progress Bar**
+    - *目标:* 为破译电机和激活撤离点添加环形或长条进度反馈。
+- [x] **资金面板美化 | Funds Panel**
+    - *目标:* HUD 已显示资金。
 
-## 🛠 重构任务 (Refactoring Tasks)
-- [ ] **网络与逻辑解耦 | Decouple Network from Logic**
-    - `Room` 结构体目前仍承担了部分逻辑，虽然在 Alpha 阶段可行，但未来建议迁移至 `GameServer`。
-- [x] **AOI 优化 | AOI Optimization**
-    - 视觉系统已采用 `AOIManager`。声音系统目前使用简单的距离校验（对于少量玩家已经足够）。
-- [x] **碰撞判定优化 | Collision Logic Update**
-    - 后端：将碰撞检测半径缩小至 0.5。
+### 3. 协议与连接 (Protocol & Connection)
+- [x] **玩家名称输入 | Player Name Input**
+    - *前端:* 启动时请求用户输入名称。
+    - *协议:* 增加了 `LOGIN_REQ` 处理逻辑。
+    - *后端:* 绑定 SessionID 与 Name，用于数据库存储。
 
-## 📅 开发路线图 (Roadmap)
-1.  **第一阶段 (Sprint 1):** 阶段 0 实现 + 基础 UI。 (Phase 0 Implementation + Basic UI. - **Completed**)
-2.  **第二阶段 (Sprint 2):** 负重与声音物理系统 + 雷达 UI。 (Weight & Sound Physics + Radar UI. - **Completed**)
-3.  **第三阶段 (Sprint 3):** 经济系统、空投机制与物理优化。 (Economy, Supply Drops, and Physics Optimization. - **Completed**)
+## 📅 Sprint 4: 性能优化与重构 (Optimization & Refactoring)
+
+### 1. 架构解耦 (Architecture)
+- [ ] **逻辑与网络分离 | Decouple Logic from Network**
+    - *重构:* 将 `Room` 拆分为 `GameLoop` (Simulation) 和 `NetworkManager`。
+
+### 2. 物理与碰撞 (Physics)
+- [ ] **高级碰撞判定 | Advanced Collision**
+    - *升级:* 从网格判定升级为 AABB 或 圆形碰撞判定。
+    - *参数:* 严格执行 0.5 半径。
+
+### 3. 协议升级 (Protocol Migration)
+- [ ] **Protobuf 迁移 | Protobuf Migration**
+    - *定义:* 编写 `.proto` 文件。
+    - *替换:* 替换 JSON 序列化，优化带宽。

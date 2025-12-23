@@ -9,11 +9,15 @@ import (
 
 	"echo_trace_server/logic"
 	"echo_trace_server/network"
+	"echo_trace_server/storage"
 )
 
 var Config logic.GameConfig
 
 func main() {
+	// 0. Init Persistence
+	storage.InitDB("./game.db")
+
 	// 1. Load Config
 	absPath, _ := filepath.Abs("../game_config.json")
 	data, err := ioutil.ReadFile(absPath)
