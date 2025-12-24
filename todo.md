@@ -1,4 +1,4 @@
-# Echo Trace 开发计划 | Development Plan
+# 回声追踪 开发计划 | Echo Trace Development Plan
 
 > **状态 (Status):** Sprint 3 修正中 (Sprint 3 Fixes)
 > **目标 (Objective):** Sprint 4 - 性能优化与代码重构 (Optimization & Refactoring)

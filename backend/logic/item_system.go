@@ -172,40 +172,6 @@ func (gs *GameState) HandlePickup(playerID string) {
 	}
 }
 
-func (gs *GameState) HandleBuyItem(playerID string, itemID string) bool {
-	gs.Mutex.Lock()
-	defer gs.Mutex.Unlock()
-
-	p, ok := gs.Players[playerID]
-	if !ok || !p.IsAlive { return false }
-	
-	// Check Phase/Tier Restriction
-	currentTier := gs.Phase
-	if currentTier < 1 { currentTier = 1 }
-	if currentTier > 3 { currentTier = 3 }
-
-	itemTemplate, valid := ItemDB[itemID]
-	if !valid { return false }
-	
-	if itemTemplate.Tier > currentTier {
-		return false // Cannot buy higher tier
-	}
-	
-	cost := itemTemplate.Value
-	if p.Funds >= cost {
-		if len(p.Inventory) < 6 {
-			p.Funds -= cost
-			newItem := itemTemplate
-			newItem.UID = NewUID()
-			p.Inventory = append(p.Inventory, newItem)
-			gs.RecalculateStats(p)
-			log.Printf("Player %s bought %s for $%d", playerID, itemID, cost)
-			return true
-		}
-	}
-	return false
-}
-
 func (gs *GameState) HandleUseItem(playerID string, slotIndex int) {
 	gs.Mutex.Lock()
 	defer gs.Mutex.Unlock()

@@ -197,6 +197,71 @@ func (gs *GameState) HandleSellItem(sessionID string, slotIndex int) {
 	log.Printf("Player %s sold %s for $%d", p.Name, item.ID, val)
 }
 
+func (gs *GameState) HandleBuyItem(sessionID string, itemID string) {
+	gs.Mutex.Lock()
+	defer gs.Mutex.Unlock()
+
+	p, ok := gs.Players[sessionID]
+	if !ok || !p.IsAlive { return }
+
+	// Check Merchant Distance
+	nearMerchant := false
+	for _, e := range gs.Entities {
+		if e.Type == EntityTypeMerchant && Distance(p.Pos, e.Pos) <= 3.0 {
+			nearMerchant = true
+			break
+		}
+	}
+	
+	if !nearMerchant { return }
+
+	// Find Item Config
+	// Iterate ItemDB (Global var in item_system.go)
+	// We need to access ItemDB. It is in package logic.
+	var targetItem Item
+	found := false
+	for _, it := range ItemDB {
+		if it.ID == itemID {
+			targetItem = it
+			found = true
+			break
+		}
+	}
+	
+	if !found { return }
+	
+	// Cost Logic: Buy Price = Value * 2 (or just hardcoded mapping matching frontend)
+	// Frontend has:
+	// T1: Shock 100, Med 50, Radar 150
+	// T2: Shock 200, Med 100, Radar 300
+	// T3: Shock 350, Radar 500
+	
+	// Let's rely on item.Value if we set it, or simple switch
+	cost := 0
+	switch itemID {
+	case "WPN_SHOCK": cost = 100
+	case "SURV_MEDKIT": cost = 50
+	case "RECON_RADAR": cost = 150
+	case "WPN_SHOCK_T2": cost = 200
+	case "SURV_MEDKIT_T2": cost = 100
+	case "RECON_RADAR_T2": cost = 300
+	case "WPN_SHOCK_T3": cost = 350
+	case "RECON_RADAR_T3": cost = 500
+	default: cost = 9999
+	}
+	
+	if p.Funds >= cost && len(p.Inventory) < 6 {
+		p.Funds -= cost
+		
+		newItem := targetItem
+		newItem.UID = NewUID()
+		p.Inventory = append(p.Inventory, newItem)
+		
+		gs.RecalculateStats(p)
+		log.Printf("Player %s bought %s for $%d", p.Name, itemID, cost)
+	}
+}
+
 func (gs *GameState) SetPlayerName(sessionID, name string) {
 	gs.Mutex.Lock()
 	defer gs.Mutex.Unlock()

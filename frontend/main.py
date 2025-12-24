@@ -3,19 +3,19 @@ import queue
 import pygame
 from client.network import NetworkClient
 from client.gamestate import GameState
-from client.renderer import Renderer, WINDOW_WIDTH, WINDOW_HEIGHT
+from client.renderer import Renderer
+from client.config import WINDOW_WIDTH, WINDOW_HEIGHT
 
-# Default Server (Used if not changed in Connect UI)
+# Default Server
 DEFAULT_SERVER_URL = "ws://localhost:8080/ws"
 
 def main():
     pygame.init()
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-    pygame.display.set_caption("Echo Trace Client [Alpha 0.5 - Rooms]")
+    pygame.display.set_caption("Echo Trace Client [Alpha 0.5]")
     clock = pygame.time.Clock()
 
     recv_q = queue.Queue()
-    # Net is initialized later in CONNECT state
     net = None
 
     state = GameState()
@@ -32,12 +32,14 @@ def main():
             if renderer.state == "CONNECT":
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_RETURN:
-                        url = renderer.server_input.strip()
-                        if not url: url = DEFAULT_SERVER_URL
+                        url = renderer.server_input.strip() or DEFAULT_SERVER_URL
                         print(f"Connecting to {url}...")
-                        net = NetworkClient(url, recv_q)
-                        net.start()
-                        renderer.state = "LOGIN"
+                        try:
+                            net = NetworkClient(url, recv_q)
+                            net.start()
+                            renderer.state = "LOGIN"
+                        except Exception as e:
+                            print(f"Connection failed: {e}")
                     elif event.key == pygame.K_BACKSPACE:
                         renderer.server_input = renderer.server_input[:-1]
                     else:
@@ -48,10 +50,7 @@ def main():
             if renderer.state == "LOGIN":
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_RETURN:
-                        name = renderer.name_input.strip()
-                        if not name: name = "Agent_47"
-                        print(f"Logging in as {name}...")
-                        # Send Login (1001)
+                        name = renderer.name_input.strip() or "Agent_47"
                         if net: net.send({"type": 1001, "payload": {"name": name}})
                         renderer.state = "MENU"
                     elif event.key == pygame.K_BACKSPACE:
@@ -63,31 +62,20 @@ def main():
             # --- State: MENU ---
             if renderer.state == "MENU":
                 if event.type == pygame.MOUSEBUTTONDOWN:
-                    pos = event.pos
-                    if renderer.menu_rects.get("create", pygame.Rect(0,0,0,0)).collidepoint(pos):
+                    if renderer.menu_rects.get("create").collidepoint(event.pos):
                         renderer.state = "CONFIG"
-                    elif renderer.menu_rects.get("join", pygame.Rect(0,0,0,0)).collidepoint(pos):
-                        # Join Random (1011)
+                    elif renderer.menu_rects.get("join").collidepoint(event.pos):
                         if net: net.send({"type": 1011, "payload": {}})
                 continue
 
-            # --- State: CONFIG (Create Room) ---
+            # --- State: CONFIG ---
             if renderer.state == "CONFIG":
                 if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_UP:
-                        renderer.config_active_idx = (renderer.config_active_idx - 1) % len(renderer.config_keys)
-                    elif event.key == pygame.K_DOWN:
-                        renderer.config_active_idx = (renderer.config_active_idx + 1) % len(renderer.config_keys)
+                    if event.key == pygame.K_UP: renderer.config_active_idx = (renderer.config_active_idx - 1) % len(renderer.config_keys)
+                    elif event.key == pygame.K_DOWN: renderer.config_active_idx = (renderer.config_active_idx + 1) % len(renderer.config_keys)
                     elif event.key == pygame.K_RETURN:
-                        # Create Room (1010)
-                        payload = {}
-                        try:
-                            payload["max_players"] = float(renderer.config_inputs["max_players"])
-                            payload["motors"] = float(renderer.config_inputs["motors"])
-                            payload["phase1_dur"] = float(renderer.config_inputs["p1_dur"])
-                            payload["phase2_dur"] = float(renderer.config_inputs["p2_dur"])
-                        except ValueError:
-                            pass
+                        # Deploy
+                        payload = {k: float(v) for k, v in renderer.config_inputs.items()}
                         if net: net.send({"type": 1010, "payload": payload})
                     elif event.key == pygame.K_BACKSPACE:
                         key = renderer.config_keys[renderer.config_active_idx]
@@ -97,104 +85,109 @@ def main():
                         renderer.config_inputs[key] += event.unicode
                 continue
 
-            # --- State: GAME (Playing) ---
+            # --- State: GAME ---
             if renderer.state == "GAME":
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
+                        # Lobby Back Button
+                        if state.phase == 0 and hasattr(renderer, 'lobby_back_rect') and renderer.lobby_back_rect.collidepoint(event.pos):
+                            renderer.state = "MENU"
+                            state = GameState() # Reset
+                            continue
+                            
                         renderer.handle_click(event.pos)
 
                 if event.type == pygame.KEYDOWN:
-                    # Shop
-                    if renderer.show_shop:
-                        if event.key >= pygame.K_1 and event.key <= pygame.K_3:
-                            items = []
-                            if state.phase == 1:
-                                items = ["WPN_SHOCK", "SURV_MEDKIT", "RECON_RADAR"]
-                            elif state.phase == 2:
-                                items = ["WPN_SHOCK_T2", "SURV_MEDKIT_T2", "RECON_RADAR_T2"]
-                            elif state.phase >= 3:
-                                items = ["WPN_SHOCK_T3", "RECON_RADAR_T3", "SURV_MEDKIT_T2"]
-                                
-                            idx = event.key - pygame.K_1
-                            if idx < len(items):
-                                net.send({"type": 2007, "payload": {"item_id": items[idx]}})
-                        # 'b' to close handled below
-                        
-                    # Toggle Shop/Settings
-                    if event.key == pygame.K_b:
-                        renderer.show_shop = not renderer.show_shop
-                        renderer.show_settings = False
-                        renderer.show_help = False
-                        
-                    if renderer.show_shop: continue
+                    if event.key == pygame.K_ESCAPE:
+                        renderer.state = "PAUSE"
+                        continue
+                    
+                    if event.key == pygame.K_F9 and renderer.dev_mode:
+                        if net: net.send({"type": 9001, "payload": {}})
 
-                    if event.key == pygame.K_w: input_dir[1] = -1
-                    elif event.key == pygame.K_s: input_dir[1] = 1
-                    elif event.key == pygame.K_a: input_dir[0] = -1
-                    elif event.key == pygame.K_d: input_dir[0] = 1
-                    
-                    elif event.key == pygame.K_e:
-                        net.send({"type": 2004, "payload": {}}) # Pickup
-                    elif event.key == pygame.K_f:
-                        net.send({"type": 2003, "payload": {}}) # Interact
-                    
-                    # Number Keys
-                    elif event.key >= pygame.K_1 and event.key <= pygame.K_6:
-                        mods = pygame.key.get_mods()
-                        if state.phase == 0 and not state.tactic_chosen:
-                            if event.key <= pygame.K_3:
-                                tactic_map = {pygame.K_1: "RECON", pygame.K_2: "DEFENSE", pygame.K_3: "TRAP"}
-                                tactic = tactic_map.get(event.key)
-                                if tactic:
-                                    net.send({"type": 2006, "payload": {"tactic": tactic}})
-                                    state.tactic_chosen = True
-                        else:
+                    # Gameplay Inputs
+                    if not renderer.show_shop:
+                        if event.key == pygame.K_w: input_dir[1] = -1
+                        elif event.key == pygame.K_s: input_dir[1] = 1
+                        elif event.key == pygame.K_a: input_dir[0] = -1
+                        elif event.key == pygame.K_d: input_dir[0] = 1
+                        elif event.key == pygame.K_e:
+                            if net: net.send({"type": 2004, "payload": {}}) # Pickup
+                        elif event.key == pygame.K_f:
+                            # Merchant Check
+                            near_merchant = False
+                            for ent in state.entities:
+                                if ent["type"] == "MERCHANT":
+                                    d = ((state.my_pos[0]-ent["pos"]["x"])**2 + (state.my_pos[1]-ent["pos"]["y"])**2)**0.5
+                                    if d <= 2.0: near_merchant = True; break
+                            if near_merchant: renderer.show_shop = True
+                            elif net: net.send({"type": 2003, "payload": {}}) # Interact
+                        
+                        # Number Keys
+                        elif event.key >= pygame.K_1 and event.key <= pygame.K_6:
                             slot = event.key - pygame.K_1
-                            if mods & pygame.KMOD_SHIFT:
-                                # Drop
-                                net.send({"type": 2005, "payload": {"slot_index": slot}})
-                            elif mods & pygame.KMOD_CTRL:
-                                # Sell
-                                net.send({"type": 2008, "payload": {"slot_index": slot}})
+                            mods = pygame.key.get_mods()
+                            if state.phase == 0 and not state.tactic_chosen:
+                                if event.key <= pygame.K_3:
+                                    t = {pygame.K_1: "RECON", pygame.K_2: "DEFENSE", pygame.K_3: "TRAP"}.get(event.key)
+                                    if net: net.send({"type": 2006, "payload": {"tactic": t}})
+                                    state.tactic_chosen = True
                             else:
-                                # Use
-                                net.send({"type": 2002, "payload": {"slot_index": slot}})
-                
+                                if mods & pygame.KMOD_SHIFT:
+                                    if net: net.send({"type": 2005, "payload": {"slot_index": slot}})
+                                elif mods & pygame.KMOD_CTRL or mods & pygame.KMOD_LCTRL:
+                                    if net: net.send({"type": 2008, "payload": {"slot_index": slot}})
+                                else:
+                                    if net: net.send({"type": 2002, "payload": {"slot_index": slot}})
+                    else:
+                        # Shop is open
+                        if event.key == pygame.K_f or event.key == pygame.K_ESCAPE: renderer.show_shop = False
+                        elif event.key >= pygame.K_1 and event.key <= pygame.K_3:
+                            ids = ["WPN_SHOCK", "SURV_MEDKIT", "RECON_RADAR"] 
+                            if state.phase == 2: ids = ["WPN_SHOCK_T2", "SURV_MEDKIT_T2", "RECON_RADAR_T2"]
+                            elif state.phase >= 3: ids = ["WPN_SHOCK_T3", "RECON_RADAR_T3", "SURV_MEDKIT_T2"]
+                            
+                            idx = event.key-pygame.K_1
+                            if idx < len(ids):
+                                net.send({"type": 2007, "payload": {"item_id": ids[idx]}})
+
                 if event.type == pygame.KEYUP:
                     if event.key in (pygame.K_w, pygame.K_s): input_dir[1] = 0
                     if event.key in (pygame.K_a, pygame.K_d): input_dir[0] = 0
 
-        # Network Handling
+            # --- State: PAUSE ---
+            if renderer.state == "PAUSE":
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        renderer.show_settings = renderer.show_help = False
+                        renderer.state = "GAME"
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    if renderer.show_settings or renderer.show_help:
+                         renderer.handle_click(event.pos)
+                    else:
+                        action = renderer.handle_pause_click(event.pos)
+                        if action == "resume": renderer.state = "GAME"
+                        elif action == "settings": renderer.show_settings = True
+                        elif action == "help": renderer.show_help = True
+                        elif action == "quit":
+                            renderer.state = "MENU"
+                            state = GameState() # Reset local
+                            renderer.show_settings = renderer.show_help = False
+
+        # Network
         if net:
             while not recv_q.empty():
                 msg = recv_q.get()
-                msg_type = msg.get("type")
-                payload = msg.get("payload")
+                mt, pl = msg.get("type"), msg.get("payload")
+                if mt == 1012: renderer.state = "GAME"; state.config = pl.get("config")
+                elif mt == 3001: 
+                    state.map_tiles = pl["map_tiles"]
+                    state.my_pos = [pl["spawn_pos"]["x"], pl["spawn_pos"]["y"]]
+                elif mt == 3002: state.update_from_server(pl)
 
-                if msg_type == 1012: # ROOM_JOINED
-                    print(f"Joined Room: {payload.get('room_id')}")
-                    state.config = payload.get("config", {})
-                    renderer.state = "GAME"
-                    
-                elif msg_type == 1001:
-                    state.self_id = payload.get("session_id")
-                    print(f"Logged in as {state.self_id}")
-
-                elif msg_type == 3001: 
-                    state.map_tiles = payload["map_tiles"]
-                    state.my_pos = [payload["spawn_pos"]["x"], payload["spawn_pos"]["y"]]
-                    state.my_inventory = payload.get("inventory", [])
-                    print(f"Map Loaded: {len(state.map_tiles)}x{len(state.map_tiles[0])}")
-                elif msg_type == 3002: 
-                    state.update_from_server(payload)
-
-        # Game Loop Logic (Only if in GAME state)
-        if renderer.state == "GAME" and net and state.phase > 0:
-            move_req = {
-                "type": 2001, 
-                "payload": {"dir": {"x": float(input_dir[0]), "y": float(input_dir[1])}}
-            }
-            net.send(move_req)
+        # Logic
+        if renderer.state == "GAME" and net and state.phase > 0 and not renderer.show_shop:
+            net.send({"type": 2001, "payload": {"dir": {"x": float(input_dir[0]), "y": float(input_dir[1])}}})
 
         renderer.draw_game(state)
         pygame.display.flip()

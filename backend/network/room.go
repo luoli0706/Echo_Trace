@@ -45,7 +45,7 @@ func (r *Room) Run() {
 		case client := <-r.Register:
 			r.Mutex.Lock()
 			r.Clients[client] = true
-			r.GameState.AddPlayer(client.SessionID)
+			p := r.GameState.AddPlayer(client.SessionID)
 
 			// Send Login Response
 			loginMsg := map[string]interface{}{
@@ -57,6 +57,21 @@ func (r *Room) Run() {
 				},
 			}
 			client.SendJSON(loginMsg)
+			
+			// IF Game already started, send Map info immediately
+			if r.GameState.Phase >= logic.PhaseSearch {
+				startMsg := map[string]interface{}{
+					"type": 3001,
+					"payload": map[string]interface{}{
+						"map_width":  r.GameState.Map.Width,
+						"map_height": r.GameState.Map.Height,
+						"spawn_pos":  p.Pos,
+						"map_tiles":  r.GameState.Map.Tiles,
+						"inventory":  p.Inventory,
+					},
+				}
+				client.SendJSON(startMsg)
+			}
 			r.Mutex.Unlock()
 
 		case client := <-r.Unregister:
