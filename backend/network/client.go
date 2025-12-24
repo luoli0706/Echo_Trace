@@ -17,13 +17,13 @@ var Upgrader = websocket.Upgrader{
 }
 
 type Client struct {
-	Hub       *Room
-	Conn      *websocket.Conn
-	Send      chan []byte
-	SessionID string
+	CurrentRoom *Room
+	Conn        *websocket.Conn
+	Send        chan []byte
+	SessionID   string
 }
 
-func ServeWs(room *Room, w http.ResponseWriter, r *http.Request) {
+func ServeWs(w http.ResponseWriter, r *http.Request) {
 	conn, err := Upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println(err)
@@ -31,8 +31,9 @@ func ServeWs(room *Room, w http.ResponseWriter, r *http.Request) {
 	}
 	sessID := fmt.Sprintf("u_%d", time.Now().UnixNano())
 
-	client := &Client{Hub: room, Conn: conn, Send: make(chan []byte, 256), SessionID: sessID}
-	client.Hub.Register <- client
+	client := &Client{CurrentRoom: nil, Conn: conn, Send: make(chan []byte, 256), SessionID: sessID}
+	
+	// Don't register yet. Wait for Join/Create.
 
 	go client.writePump()
 	go client.readPump()
@@ -40,7 +41,9 @@ func ServeWs(room *Room, w http.ResponseWriter, r *http.Request) {
 
 func (c *Client) readPump() {
 	defer func() {
-		c.Hub.Unregister <- c
+		if c.CurrentRoom != nil {
+			c.CurrentRoom.Unregister <- c
+		}
 		c.Conn.Close()
 	}()
 	for {
@@ -54,64 +57,154 @@ func (c *Client) readPump() {
 			continue
 		}
 
-		if typeCode, ok := req["type"].(float64); ok {
-			switch int(typeCode) {
-			case 1001: // LOGIN_REQ
-				if payload, ok := req["payload"].(map[string]interface{}); ok {
-					if name, ok := payload["name"].(string); ok {
-						c.Hub.GameState.SetPlayerName(c.SessionID, name)
-					}
+		typeCodeFloat, ok := req["type"].(float64)
+		if !ok { continue }
+		typeCode := int(typeCodeFloat)
+
+		// Room Management Packets
+		if typeCode == 1010 { // CREATE_ROOM
+			payload, _ := req["payload"].(map[string]interface{})
+			c.handleCreateRoom(payload)
+			continue
+		}
+		if typeCode == 1011 { // JOIN_ROOM
+			payload, _ := req["payload"].(map[string]interface{})
+			c.handleJoinRoom(payload)
+			continue
+		}
+
+		// Game Packets (Require Room)
+		if c.CurrentRoom == nil {
+			// Maybe send error?
+			continue
+		}
+
+		switch typeCode {
+		case 1001: // LOGIN_REQ
+			if payload, ok := req["payload"].(map[string]interface{}); ok {
+				if name, ok := payload["name"].(string); ok {
+					c.CurrentRoom.GameState.SetPlayerName(c.SessionID, name)
 				}
-			case 2001: // MOVE_REQ
-				if payload, ok := req["payload"].(map[string]interface{}); ok {
-					if dirMap, ok := payload["dir"].(map[string]interface{}); ok {
-						dir := logic.Vector2{
-							X: dirMap["x"].(float64),
-							Y: dirMap["y"].(float64),
-						}
-						c.Hub.GameState.HandleInput(c.SessionID, dir)
+			}
+		case 2001: // MOVE_REQ
+			if payload, ok := req["payload"].(map[string]interface{}); ok {
+				if dirMap, ok := payload["dir"].(map[string]interface{}); ok {
+					dir := logic.Vector2{
+						X: dirMap["x"].(float64),
+						Y: dirMap["y"].(float64),
 					}
+					c.CurrentRoom.GameState.HandleInput(c.SessionID, dir)
 				}
-			case 2002: // USE_ITEM_REQ
-				if payload, ok := req["payload"].(map[string]interface{}); ok {
-					if slot, ok := payload["slot_index"].(float64); ok {
-						c.Hub.GameState.HandleUseItem(c.SessionID, int(slot))
-					} else {
-						c.Hub.GameState.HandleAttack(c.SessionID, "")
-					}
+			}
+		case 2002: // USE_ITEM_REQ
+			if payload, ok := req["payload"].(map[string]interface{}); ok {
+				if slot, ok := payload["slot_index"].(float64); ok {
+					c.CurrentRoom.GameState.HandleUseItem(c.SessionID, int(slot))
+				} else {
+					c.CurrentRoom.GameState.HandleAttack(c.SessionID, "")
 				}
-			case 2003: // INTERACT_REQ
-				c.Hub.GameState.HandleInteract(c.SessionID)
-			case 2004: // PICKUP_REQ
-				c.Hub.GameState.HandlePickup(c.SessionID)
-			case 2005: // DROP_REQ
-				if payload, ok := req["payload"].(map[string]interface{}); ok {
-					if slot, ok := payload["slot_index"].(float64); ok {
-						c.Hub.GameState.HandleDropItem(c.SessionID, int(slot))
-					}
+			}
+		case 2003: // INTERACT_REQ
+			c.CurrentRoom.GameState.HandleInteract(c.SessionID)
+		case 2004: // PICKUP_REQ
+			c.CurrentRoom.GameState.HandlePickup(c.SessionID)
+		case 2006: // CHOOSE_TACTIC_REQ
+			if payload, ok := req["payload"].(map[string]interface{}); ok {
+				if tactic, ok := payload["tactic"].(string); ok {
+					c.CurrentRoom.GameState.HandleChooseTactic(c.SessionID, tactic)
 				}
-			case 2006: // CHOOSE_TACTIC_REQ
-				if payload, ok := req["payload"].(map[string]interface{}); ok {
-					if tactic, ok := payload["tactic"].(string); ok {
-						c.Hub.GameState.HandleChooseTactic(c.SessionID, tactic)
-					}
-				}
-			case 2007: // BUY_ITEM_REQ
-				if payload, ok := req["payload"].(map[string]interface{}); ok {
-					if itemID, ok := payload["item_id"].(string); ok {
-						c.Hub.GameState.HandleBuyItem(c.SessionID, itemID)
-					}
-				}
-			case 2008: // SELL_REQ
-				if payload, ok := req["payload"].(map[string]interface{}); ok {
-					if slot, ok := payload["slot_index"].(float64); ok {
-						c.Hub.GameState.HandleSellItem(c.SessionID, int(slot))
-					}
-				}
-			case 9001: // DEV_SKIP_PHASE_REQ
-				c.Hub.GameState.HandleDevSkipPhase()
 			}
 		}
+	}
+}
+
+func (c *Client) handleCreateRoom(payload map[string]interface{}) {
+	if c.CurrentRoom != nil { return } // Already in room
+
+	// Parse Config from payload or use Default
+	// For now, let's just use default config passed from main (we need access to it?)
+	// Or parse parts.
+	
+	// Minimal: Generate Room ID
+	roomID := fmt.Sprintf("room_%d", time.Now().Unix()%1000)
+	
+	// Deep Copy Logic Config? Or create new.
+	// We need logic.GameConfig struct.
+	// Since we are inside network package, we need to import logic.
+	
+	cfg := &logic.GameConfig{}
+	
+	// Basic default
+	cfg.Server.TickRateMs = 50
+	cfg.Server.MaxPlayers = 6
+	cfg.Map.Width = 32
+	cfg.Map.Height = 32
+	cfg.Map.WallDensity = 0.2
+	cfg.Gameplay.BaseMoveSpeed = 4.0
+	cfg.Gameplay.BaseViewRadius = 5.0
+	cfg.Phases.Phase1.Duration = 120
+	cfg.Phases.Phase2.Duration = 180
+	
+	// Override from payload
+	if payload != nil {
+		if mp, ok := payload["max_players"].(float64); ok { cfg.Server.MaxPlayers = int(mp) }
+		if p1, ok := payload["phase1_dur"].(float64); ok { cfg.Phases.Phase1.Duration = int(p1) }
+		if p2, ok := payload["phase2_dur"].(float64); ok { cfg.Phases.Phase2.Duration = int(p2) }
+		if m, ok := payload["motors"].(float64); ok { cfg.Phases.Phase2.MotorsSpawnCount = int(m) }
+	}
+
+	room := GlobalManager.CreateRoom(roomID, cfg)
+	c.CurrentRoom = room
+	room.Register <- c
+	
+	c.SendJSON(map[string]interface{}{
+		"type": 1012, // ROOM_JOINED
+		"payload": map[string]interface{}{
+			"success": true, 
+			"room_id": roomID,
+			"config": cfg,
+		},
+	})
+}
+
+func (c *Client) handleJoinRoom(payload map[string]interface{}) {
+	if c.CurrentRoom != nil { return }
+	
+	// Auto join first available or by ID
+	var room *Room
+	
+	// For Alpha: Join "room_id" if provided, else any
+	if payload != nil {
+		if rid, ok := payload["room_id"].(string); ok {
+			room = GlobalManager.GetRoom(rid)
+		}
+	}
+	
+	if room == nil {
+		// Pick first
+		rooms := GlobalManager.ListRooms()
+		if len(rooms) > 0 {
+			room = GlobalManager.GetRoom(rooms[0])
+		}
+	}
+	
+	if room != nil {
+		c.CurrentRoom = room
+		room.Register <- c
+		c.SendJSON(map[string]interface{}{
+			"type": 1012, // ROOM_JOINED
+			"payload": map[string]interface{}{
+				"success": true, 
+				"room_id": room.ID,
+				"config": room.Config,
+			},
+		})
+	} else {
+		// Error
+		c.SendJSON(map[string]interface{}{
+			"type": 4001,
+			"payload": map[string]interface{}{"msg": "No rooms available. Create one!"},
+		})
 	}
 }
 

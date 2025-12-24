@@ -89,6 +89,9 @@ type GameConfig struct {
 	} `json:"gameplay"`
 	Phases struct {
 		Phase1 struct { Duration int `json:"duration_sec"` } `json:"phase_1_search"`
-		Phase2 struct { Duration int `json:"duration_sec"` } `json:"phase_2_conflict"`
+		Phase2 struct { 
+			Duration int `json:"duration_sec"`
+			MotorsSpawnCount int `json:"motors_spawn_count"`
+		} `json:"phase_2_conflict"`
 	} `json:"phases"`
 }

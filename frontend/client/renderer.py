@@ -44,6 +44,21 @@ class Renderer:
         self.fog_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
         
         # UI State
+        self.state = "CONNECT" # CONNECT, LOGIN, MENU, CONFIG, GAME
+        
+        self.server_input = "ws://localhost:8080/ws"
+        self.name_input = "Agent_07"
+        
+        # Config UI
+        self.config_inputs = {
+            "max_players": "6",
+            "motors": "5",
+            "p1_dur": "120",
+            "p2_dur": "180"
+        }
+        self.config_active_idx = 0
+        self.config_keys = ["max_players", "motors", "p1_dur", "p2_dur"]
+
         self.show_settings = False
         self.show_help = False
         self.show_shop = False
@@ -62,9 +77,7 @@ class Renderer:
         self.radar_rect = pygame.Rect(WINDOW_WIDTH - 160, WINDOW_HEIGHT - 160, 150, 150)
         self.pulse_start_time = 0
         
-        # Login UI
-        self.name_input_text = ""
-        self.login_active = True
+        self.menu_rects = {}
 
     def world_to_screen(self, wx, wy, cam_x, cam_y):
         sx = (wx * GRID_SIZE) - cam_x + (WINDOW_WIDTH // 2)
@@ -75,8 +88,17 @@ class Renderer:
         self.pulse_start_time = time.time()
 
     def draw_game(self, state):
-        if self.login_active:
+        if self.state == "CONNECT":
+            self.draw_connect()
+            return
+        if self.state == "LOGIN":
             self.draw_login()
+            return
+        if self.state == "MENU":
+            self.draw_menu()
+            return
+        if self.state == "CONFIG":
+            self.draw_config()
             return
 
         if state.phase == 0:
@@ -203,21 +225,87 @@ class Renderer:
         if self.show_help: self.draw_help_menu()
         if self.show_shop: self.draw_shop_menu(state)
 
-    def draw_login(self):
+    def draw_connect(self):
         self.screen.fill(COLOR_BG)
-        title = self.font.render("ECHO TRACE - LOGIN", True, (0, 255, 255))
-        rect = title.get_rect(center=(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 50))
+        title = self.font.render("ECHO TRACE - CONNECT", True, (0, 255, 255))
+        rect = title.get_rect(center=(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 80))
         self.screen.blit(title, rect)
         
-        input_rect = pygame.Rect(WINDOW_WIDTH//2 - 100, WINDOW_HEIGHT//2, 200, 40)
+        input_rect = pygame.Rect(WINDOW_WIDTH//2 - 200, WINDOW_HEIGHT//2 - 20, 400, 40)
         pygame.draw.rect(self.screen, (50, 50, 60), input_rect)
         pygame.draw.rect(self.screen, (0, 255, 255), input_rect, 2)
         
-        name_surf = self.font.render(self.name_input_text + "|", True, (255, 255, 255))
-        self.screen.blit(name_surf, (input_rect.x + 10, input_rect.y + 5))
+        txt = self.server_input + "|"
+        surf = self.font.render(txt, True, (255, 255, 255))
+        self.screen.blit(surf, (input_rect.x + 10, input_rect.y + 5))
         
-        hint = self.hud_font.render("Enter Name and Press Enter", True, (150, 150, 150))
-        self.screen.blit(hint, (WINDOW_WIDTH//2 - 100, WINDOW_HEIGHT//2 + 50))
+        hint = self.hud_font.render("Enter Server URL (Default: ws://localhost:8080/ws)", True, (150, 150, 150))
+        self.screen.blit(hint, (WINDOW_WIDTH//2 - 200, WINDOW_HEIGHT//2 + 30))
+
+    def draw_login(self):
+        self.screen.fill(COLOR_BG)
+        title = self.font.render("IDENTITY VERIFICATION", True, (0, 255, 255))
+        rect = title.get_rect(center=(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 80))
+        self.screen.blit(title, rect)
+        
+        input_rect = pygame.Rect(WINDOW_WIDTH//2 - 150, WINDOW_HEIGHT//2 - 20, 300, 40)
+        pygame.draw.rect(self.screen, (50, 50, 60), input_rect)
+        pygame.draw.rect(self.screen, (0, 255, 255), input_rect, 2)
+        
+        txt = self.name_input + "|"
+        surf = self.font.render(txt, True, (255, 255, 255))
+        self.screen.blit(surf, (input_rect.x + 10, input_rect.y + 5))
+        
+        hint = self.hud_font.render("Enter Agent Name", True, (150, 150, 150))
+        self.screen.blit(hint, (WINDOW_WIDTH//2 - 150, WINDOW_HEIGHT//2 + 30))
+
+    def draw_menu(self):
+        self.screen.fill(COLOR_BG)
+        title = self.font.render("MISSION CONTROL", True, (0, 255, 255))
+        rect = title.get_rect(center=(WINDOW_WIDTH//2, 100))
+        self.screen.blit(title, rect)
+        
+        # Draw Buttons
+        create_rect = pygame.Rect(WINDOW_WIDTH//2 - 150, 300, 300, 50)
+        join_rect = pygame.Rect(WINDOW_WIDTH//2 - 150, 400, 300, 50)
+        
+        pygame.draw.rect(self.screen, COLOR_BTN, create_rect)
+        pygame.draw.rect(self.screen, (0, 255, 255), create_rect, 2)
+        c_surf = self.font.render("CREATE OPERATION", True, (255,255,255))
+        self.screen.blit(c_surf, c_surf.get_rect(center=create_rect.center))
+
+        pygame.draw.rect(self.screen, COLOR_BTN, join_rect)
+        pygame.draw.rect(self.screen, (0, 255, 255), join_rect, 2)
+        j_surf = self.font.render("JOIN OPERATION", True, (255,255,255))
+        self.screen.blit(j_surf, j_surf.get_rect(center=join_rect.center))
+        
+        self.menu_rects = {"create": create_rect, "join": join_rect}
+
+    def draw_config(self):
+        self.screen.fill(COLOR_BG)
+        title = self.font.render("OPERATION CONFIGURATION", True, (0, 255, 255))
+        rect = title.get_rect(center=(WINDOW_WIDTH//2, 50))
+        self.screen.blit(title, rect)
+        
+        y = 150
+        labels = {
+            "max_players": "Max Agents:",
+            "motors": "Motors Count:",
+            "p1_dur": "Search Phase (s):",
+            "p2_dur": "Conflict Phase (s):"
+        }
+        
+        for i, key in enumerate(self.config_keys):
+            lbl = labels[key]
+            val = self.config_inputs[key]
+            color = (255, 255, 0) if i == self.config_active_idx else (200, 200, 200)
+            
+            surf = self.font.render(f"{lbl} {val}|", True, color) if i == self.config_active_idx else self.font.render(f"{lbl} {val}", True, color)
+            self.screen.blit(surf, (WINDOW_WIDTH//2 - 150, y))
+            y += 50
+            
+        hint = self.hud_font.render("[UP/DOWN] Select  [TYPE] Edit  [ENTER] Start", True, (150, 150, 150))
+        self.screen.blit(hint, (WINDOW_WIDTH//2 - 200, y + 50))
 
     def draw_lobby(self, state):
         self.screen.fill(COLOR_BG)
@@ -266,9 +354,8 @@ class Renderer:
             elif blip["type"] == "EXIT":
                 pygame.draw.circle(self.screen, COLOR_EXIT, (mx, my), 4)
             elif blip["type"] == "SUPPLY_DROP":
-                pygame.draw.circle(self.screen, COLOR_SUPPLY_DROP, (mx, my), 4)
-            elif blip["type"] == "MERCHANT":
-                pygame.draw.rect(self.screen, (255, 215, 0), (mx-3, my-3, 6, 6))
+                # Square for Supply Drop
+                pygame.draw.rect(self.screen, COLOR_SUPPLY_DROP, (mx-3, my-3, 6, 6))
 
         # Draw Self
         mx = int(offset_x + state.my_pos[0] * scale)

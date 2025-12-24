@@ -17,9 +17,11 @@ var Config logic.GameConfig
 func main() {
 	// 0. Init Persistence
 	storage.InitDB("./game.db")
-	logic.LoadItemValues()
+	
+	// 0.1 Init Network Manager
+	network.InitManager()
 
-	// 1. Load Config
+	// 1. Load Config (Default)
 	absPath, _ := filepath.Abs("../game_config.json")
 	data, err := ioutil.ReadFile(absPath)
 	if err != nil {
@@ -29,16 +31,12 @@ func main() {
 		log.Fatalf("Parse config error: %v", err)
 	}
 
-	// 2. Init Room
-	globalRoom := network.NewRoom("alpha_1", &Config)
-	go globalRoom.Run()
-
 	// 3. Router Setup
 	mux := http.NewServeMux()
 	
 	// WebSocket Endpoint
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		network.ServeWs(globalRoom, w, r)
+		network.ServeWs(w, r)
 	})
 
 	// Health Check Endpoint (For future load balancers/k8s)
