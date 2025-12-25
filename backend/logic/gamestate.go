@@ -2,6 +2,7 @@ package logic
 
 import (
 	"echo_trace_server/storage"
+	"fmt"
 	"log"
 	"math"
 	"sync"
@@ -348,7 +349,7 @@ func (gs *GameState) ProcessExtraction(p *Player) {
 	
 	// Save Immediately
 	storage.SavePlayer(p.Name, p.Name, p.Funds, 0)
-	gs.addEvent("EXTRACTION", p.Name + " escaped with $" + string(rune(lootValue)) + "!")
+	gs.addEvent("EXTRACTION", fmt.Sprintf("%s escaped with $%d!", p.Name, lootValue))
 	log.Printf("Player %s extracted. Funds: %d (+%d)", p.Name, p.Funds, lootValue)
 }
 

@@ -186,8 +186,14 @@ def main():
                 elif mt == 3002: state.update_from_server(pl)
 
         # Logic
-        if renderer.state == "GAME" and net and state.phase > 0 and not renderer.show_shop:
-            net.send({"type": 2001, "payload": {"dir": {"x": float(input_dir[0]), "y": float(input_dir[1])}}})
+        if renderer.state == "GAME" and net:
+            if getattr(state, "is_extracted", False) and renderer.spectator_mode:
+                # Free Spectate Camera Movement
+                speed = 10.0 * (1.0/60.0) # approx dt
+                renderer.cam_offset[0] += input_dir[0] * speed
+                renderer.cam_offset[1] += input_dir[1] * speed
+            elif state.phase > 0 and not renderer.show_shop:
+                net.send({"type": 2001, "payload": {"dir": {"x": float(input_dir[0]), "y": float(input_dir[1])}}})
 
         renderer.draw_game(state)
         pygame.display.flip()
