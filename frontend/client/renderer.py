@@ -151,89 +151,72 @@ class Renderer:
                         pygame.draw.rect(self.screen, COLOR_WALL_EDGE, rect, 1)
 
         # 2. Entities
+        half = GRID_SIZE // 2
         for ent in state.entities:
-            ex, ey = ent["pos"]["x"], ent["pos"]["y"]
-            sx, sy = self.world_to_screen(ex, ey, cam_x, cam_y)
+            sx, sy = self.world_to_screen(ent["pos"]["x"], ent["pos"]["y"], cam_x, cam_y)
+            
+            # Center-based logic for all entities
+            # Rect/Image top-left: sx-half, sy-half
+            # Circle center: sx, sy
+            # Text center: sx, sy
+            
+            tl_x, tl_y = sx - half, sy - half
             
             if ent["type"] == "ITEM_DROP":
                 if "ITEM_DROP" in self.assets:
-                    self.screen.blit(self.assets["ITEM_DROP"], (sx, sy))
+                    self.screen.blit(self.assets["ITEM_DROP"], (tl_x, tl_y))
                 else:
                     self.draw_text_centered("📦", sx, sy, (255, 255, 0))
             
             elif ent["type"] == "SUPPLY_DROP":
-                # Draw a glow
-                pygame.draw.circle(self.screen, COLOR_SUPPLY_DROP, (sx + GRID_SIZE//2, sy + GRID_SIZE//2), GRID_SIZE, 1)
+                pygame.draw.circle(self.screen, COLOR_SUPPLY_DROP, (sx, sy), GRID_SIZE, 1)
                 if "SUPPLY_DROP" in self.assets:
-                    self.screen.blit(self.assets["SUPPLY_DROP"], (sx, sy))
+                    self.screen.blit(self.assets["SUPPLY_DROP"], (tl_x, tl_y))
                 else:
                     self.draw_text_centered("🎁", sx, sy, COLOR_SUPPLY_DROP)
 
             elif ent["type"] == "MERCHANT":
                 if "MERCHANT" in self.assets:
-                    self.screen.blit(self.assets["MERCHANT"], (sx, sy))
+                    self.screen.blit(self.assets["MERCHANT"], (tl_x, tl_y))
                 else:
                     self.draw_text_centered("💰", sx, sy, (255, 215, 0))
 
             elif ent["type"] == "MOTOR":
                 color = COLOR_MOTOR_DONE if ent["state"] == 2 else COLOR_MOTOR_ACTIVE
-                # Fill Circle (width=0)
-                center = (sx + GRID_SIZE//2, sy + GRID_SIZE//2)
-                pygame.draw.circle(self.screen, color, center, GRID_SIZE//2, 0)
+                pygame.draw.circle(self.screen, color, (sx, sy), half, 0)
                 self.draw_text_centered("M", sx, sy, (0, 0, 0))
-                
                 if ent["state"] != 2:
                     extra = ent.get("extra", {})
                     if extra:
-                        prog = extra.get("progress", 0)
-                        max_p = extra.get("max_progress", 100)
-                        self.draw_bar(sx, sy-10, prog, max_p, (0, 255, 255))
+                        # Bar above entity
+                        self.draw_bar(tl_x, tl_y - 10, extra.get("progress", 0), extra.get("max_progress", 100), (0, 255, 255))
             
             elif ent["type"] == "EXIT":
-                # Fill Rect
-                pygame.draw.rect(self.screen, COLOR_EXIT, (sx, sy, GRID_SIZE, GRID_SIZE), 0)
+                pygame.draw.rect(self.screen, COLOR_EXIT, (tl_x, tl_y, GRID_SIZE, GRID_SIZE), 0)
                 self.draw_text_centered("E", sx, sy, (0, 0, 0))
 
         # 3. Players
         player_draw_radius = GRID_SIZE // 4 
         for pid, p in state.players.items():
-            px, py = p["pos"]["x"], p["pos"]["y"]
-            sx, sy = self.world_to_screen(px, py, cam_x, cam_y)
-            center = (sx + GRID_SIZE//2, sy + GRID_SIZE//2)
-            pygame.draw.circle(self.screen, COLOR_ENEMY, center, player_draw_radius)
-            self.draw_text_centered("👹", sx, sy) 
-            self.draw_hp_bar(sx, sy - 5, p["hp"], p["max_hp"])
-
-        # 4. Self
+            sx, sy = self.world_to_screen(p["pos"]["x"], p["pos"]["y"], cam_x, cam_y)
+            pygame.draw.circle(self.screen, COLOR_ENEMY, (sx, sy), player_draw_radius)
+            self.draw_hp_bar(sx - half, sy - half - 5, p["hp"], p["max_hp"])
+            
         sx, sy = self.world_to_screen(state.my_pos[0], state.my_pos[1], cam_x, cam_y)
-        center = (sx + GRID_SIZE//2, sy + GRID_SIZE//2)
-        pygame.draw.circle(self.screen, COLOR_SELF, center, player_draw_radius)
-        self.draw_text_centered("🏃", sx, sy)
-        self.draw_hp_bar(sx, sy - 5, state.my_hp, 100)
+        pygame.draw.circle(self.screen, COLOR_SELF, (sx, sy), player_draw_radius)
+        self.draw_text_centered("ME", sx, sy-10) 
+        self.draw_hp_bar(sx - half, sy - half - 5, state.my_hp, 100)
 
-        # 5. Fog
+        # 4. Fog
         if not self.dev_mode:
             self.fog_surf.fill(COLOR_FOG)
             view_px = int(state.view_radius * GRID_SIZE)
             pygame.draw.circle(self.fog_surf, (0,0,0,0), (WINDOW_WIDTH//2, WINDOW_HEIGHT//2), view_px)
             self.screen.blit(self.fog_surf, (0,0))
 
-        # 6. Radar / UI
-        self.draw_hud(state)
-        self.draw_inventory(state)
-        self.draw_events(state)
-        self.draw_minimap(state)
-        
-        # 7. Overlays
-        if state.my_hp <= 0:
-            self.draw_death_overlay()
-        
-        if getattr(state, "is_extracted", False):
-            self.draw_spectator_overlay()
-        
-        if self.show_shop:
-            self.draw_shop_menu(state)
-            
+        self.draw_hud(state); self.draw_inventory(state); self.draw_events(state); self.draw_minimap(state)
+        if state.my_hp <= 0: self.draw_death_overlay()
+        if self.show_shop: self.draw_shop_menu(state)
         if self.state == "PAUSE":
             self.draw_pause_menu()
             if self.show_settings: self.draw_settings_menu()
@@ -391,7 +374,7 @@ class Renderer:
     def draw_text_centered(self, text, x, y, color=(255,255,255)):
         try:
             surf = self.font.render(text, True, color)
-            self.screen.blit(surf, surf.get_rect(center=(x+GRID_SIZE//2, y+GRID_SIZE//2)))
+            self.screen.blit(surf, surf.get_rect(center=(x, y)))
         except:
             pass # Font error catch
 

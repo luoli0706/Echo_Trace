@@ -3,7 +3,6 @@ package network
 import (
 	"log"
 	"sync"
-	"time"
 
 	"echo_trace_server/logic"
 )

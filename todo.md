@@ -1,61 +1,51 @@
-# 回声追踪 开发计划 | Echo Trace Development Plan
+# Echo Trace Development Plan | 开发计划
 
-> **状态 (Status):** Sprint 3 修正中 (Sprint 3 Fixes)
-> **目标 (Objective):** Sprint 4 - 性能优化与代码重构 (Optimization & Refactoring)
+> **Status:** Sprint 4 重构与优化中 (Optimization & Refactoring)
+> **Objective:** 实现 docs/p0_recommendations.md 中的关键架构升级。
 
-## 📅 Sprint 3: 经济体系与博弈闭环 (Economy & Game Loop)
+## 🚨 P0: Critical Architecture Decoupling | 关键架构解耦 (Current Focus)
 
-### 1. 后端：经济结算与持久化 (Backend: Settlement & Persistence)
-- [x] **高价值空投逻辑 | High-Value Supply Drops**
-    - *优化:* 已实现重心刷新和物品生成。
-    - *雷达:* 已实现持续显示。
-    - *修正:* 图标已优化（带边框方形），生成上限已提高。
-- [x] **撤离处理 | Process Extraction**
-    - *实现:* 在 `ProcessExtraction` 中实现了基础的 "物品 -> 资金" 转换逻辑。
-    - *逻辑:* 撤离时清空背包并保存资金。
-- [x] **SQLite 持久化层 | SQLite Persistence Layer**
-    - *基础:* 已集成 SQLite。
-    - *任务:* 玩家断开连接或撤离时保存数据。
-    - *任务:* 玩家登录 (`SetPlayerName`) 时加载数据。
-- [x] **道具价值系统 | Item Value System**
-    - *数据:* 创建了 `item_values.json`。
-    - *逻辑:* 后端加载价值，撤离时按价值结算。
-- [x] **商店系统 | Shop System**
-    - *逻辑:* 后端处理 `BUY_ITEM_REQ`。
-    - *限制:* 只能购买当前 Phase 对应 Tier 的物品。
+- [x] **Refactor GameLoop | 重构游戏循环**
+    - [x] Create `logic/loop.go` with `GameLoop` struct.
+    - [x] Implement `Run()` with Ticker and Channel handling.
+    - [x] Decouple `Room` from direct ticking.
+- [x] **Actor Model for Input | 演员模型输入处理**
+    - [x] Define `PlayerInput` struct.
+    - [x] Replace direct method calls in `client.go` with `GameLoop.InputChan`.
+- [x] **Snapshot Broadcasting | 快照广播**
+    - [x] Implement `SnapshotChan` in `GameLoop`.
+    - [x] Update `Room` to listen and broadcast snapshots.
 
-### 2. 前端：交互与反馈 (Frontend: UI & Feedback)
-- [ ] **交互进度条 | Interaction Progress Bar**
-    - *目标:* 为破译电机和激活撤离点添加环形或长条进度反馈。
-- [x] **资金面板美化 | Funds Panel**
-    - *目标:* HUD 已显示资金。
-- [x] **商店界面 | Shop UI**
-    - *实现:* 按 B 打开黑市界面，支持购买基础道具。
-- [x] **开发者模式 | Developer Mode**
-    - *实现:* 设置中开启。
-    - *功能:* F9 跳过阶段，去雾高亮。
-    - *修正:* F9 跳过阶段后，雷达脉冲立即生效。
+## 🚨 P0: Physics Engine Upgrade | 物理引擎升级
 
-### 3. 协议与连接 (Protocol & Connection)
-- [x] **玩家名称输入 | Player Name Input**
-    - *前端:* 启动时请求用户输入名称。
-    - *协议:* 增加了 `LOGIN_REQ` 处理逻辑。
-    - *后端:* 绑定 SessionID 与 Name，用于数据库存储。
+- [x] **New Collision System | 新碰撞系统**
+    - [x] Create `logic/physics.go`.
+    - [x] Implement `CircleAABB` collision detection.
+    - [x] Implement `ResolveMovement` with sliding vectors.
+- [x] **Integrate Physics | 集成物理**
+    - [x] Replace `UpdateTick` movement logic.
+    - [x] Remove old `isWalkableWithRadius`.
 
-## 📅 Sprint 4: 性能优化与重构 (Optimization & Refactoring)
+## 🚨 P1: Protocol Optimization (Protobuf) | 协议优化
 
-### 1. 架构解耦 (Architecture)
-- [x] **逻辑与网络分离 | Decouple Logic from Network**
-    - *重构:* 将 `Room` 拆分为 `GameLoop` (Simulation) 和 `NetworkManager`。
-    - *实现:* 创建了 `GameLoop`，使用 Channel 通信。
+- [ ] **Define Schema | 定义 Schema**
+    - [ ] Create `.proto` files for `InputEvent` and `StateSnapshot`.
+- [ ] **Generate Code | 生成代码**
+    - [ ] Setup `protoc` workflow.
+- [ ] **Migrate Network | 迁移网络层**
+    - [ ] Update `client.go` to use binary messages.
+    - [ ] Update frontend to parse Protobuf.
 
-### 2. 物理与碰撞 (Physics)
-- [x] **高级碰撞判定 | Advanced Collision**
-    - *升级:* 从网格判定升级为 AABB 或 圆形碰撞判定。
-    - *参数:* 严格执行 0.5 半径。
-    - *实现:* `physics.go` 实现了 `ResolveMovement` (Circle-AABB with Sliding)。
+## 📅 Sprint 3: Economy & Loop (Completed Items)
 
-### 3. 协议升级 (Protocol Migration)
-- [ ] **Protobuf 迁移 | Protobuf Migration**
-    - *定义:* 编写 `.proto` 文件。
-    - *替换:* 替换 JSON 序列化，优化带宽。
+- [x] High-Value Supply Drops (Logic & Radar).
+- [x] Process Extraction (Funds Settlement).
+- [x] SQLite Persistence.
+- [x] Shop System & UI.
+- [x] Developer Mode.
+- [x] Player Name Input.
+
+## 📅 Sprint 4 Remaining Tasks
+
+1.  **Verify Stability:** Run stress tests on new GameLoop.
+2.  **Protobuf Migration:** Start defining `.proto` files.
