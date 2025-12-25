@@ -342,11 +342,13 @@ func (gs *GameState) ProcessExtraction(p *Player) {
 	
 	p.Funds += lootValue
 	p.Inventory = []Item{} // Clear inventory on extract
-	gs.RecalculateStats(p)
+	p.IsExtracted = true
+	p.IsAlive = false      // Stop physics/interaction
+	p.ViewRadius = 100.0   // Spectator Mode
 	
 	// Save Immediately
 	storage.SavePlayer(p.Name, p.Name, p.Funds, 0)
-	gs.addEvent("EXTRACTION", p.Name + " escaped with $" + string(rune(lootValue)) + "!") // rune cast is buggy for string int, fixing logic below.
+	gs.addEvent("EXTRACTION", p.Name + " escaped with $" + string(rune(lootValue)) + "!")
 	log.Printf("Player %s extracted. Funds: %d (+%d)", p.Name, p.Funds, lootValue)
 }
 
@@ -468,7 +470,8 @@ func (gs *GameState) UpdateTick(dt float64) {
 						gs.ProcessExtraction(p)
 						p.ChannelingTargetUID = ""
 						p.IsExtracting = false
-						gs.RemovePlayer(p.SessionID) // Remove from map
+						// Do NOT remove player to allow spectating
+						// gs.RemovePlayer(p.SessionID) 
 					}
 				}
 			}
@@ -502,14 +505,12 @@ func (gs *GameState) UpdateTick(dt float64) {
 				p.TargetDir.X /= len
 				p.TargetDir.Y /= len
 			}
-			newX := p.Pos.X + p.TargetDir.X*p.MoveSpeed*dt
-			if gs.isWalkableWithRadius(newX, p.Pos.Y, playerRadius) {
-				p.Pos.X = newX
+			
+			delta := Vector2{
+				X: p.TargetDir.X * p.MoveSpeed * dt,
+				Y: p.TargetDir.Y * p.MoveSpeed * dt,
 			}
-			newY := p.Pos.Y + p.TargetDir.Y*p.MoveSpeed*dt
-			if gs.isWalkableWithRadius(p.Pos.X, newY, playerRadius) {
-				p.Pos.Y = newY
-			}
+			p.Pos = gs.ResolveMovement(p.Pos, delta, playerRadius)
 		}
 	}
 }
@@ -561,7 +562,7 @@ func (gs *GameState) spawnPhaseSupplyDrops(phase int) {
 		if pos.X >= float64(gs.Map.Width)-1 { pos.X = float64(gs.Map.Width)-1 }
 		if pos.Y >= float64(gs.Map.Height)-1 { pos.Y = float64(gs.Map.Height)-1 }
 
-		if gs.isWalkableWithRadius(pos.X, pos.Y, 0.5) {
+		if !gs.checkCollision(pos, 0.5) {
 			gs.SpawnSupplyDrop(pos, phase)
 		} else {
 			// Fallback
@@ -609,15 +610,6 @@ func (gs *GameState) addEvent(t, msg string) {
 	}
 }
 
-func (gs *GameState) isWalkableWithRadius(x, y, r float64) bool {
-	if !gs.Map.IsWalkable(x, y) { return false }
-	if !gs.Map.IsWalkable(x+r, y) || !gs.Map.IsWalkable(x-r, y) ||
-	   !gs.Map.IsWalkable(x, y+r) || !gs.Map.IsWalkable(x, y-r) {
-		return false
-	}
-	return true
-}
-
 func (gs *GameState) GetSnapshot(sessionID string) map[string]interface{} {
 	gs.Mutex.RLock()
 	defer gs.Mutex.RUnlock()
@@ -629,7 +621,19 @@ func (gs *GameState) GetSnapshot(sessionID string) map[string]interface{} {
 	for _, e := range gs.Entities {
 		entSlice = append(entSlice, e)
 	}
-	visiblePlayers, visibleEntities := gs.AOI.GetVisibleEntities(p, gs.Players, entSlice)
+	
+	var visiblePlayers []*Player
+	var visibleEntities []Entity
+	
+	if p.IsExtracted {
+		// Spectator Mode: See All
+		for _, pl := range gs.Players {
+			visiblePlayers = append(visiblePlayers, pl)
+		}
+		visibleEntities = entSlice
+	} else {
+		visiblePlayers, visibleEntities = gs.AOI.GetVisibleEntities(p, gs.Players, entSlice)
+	}
 
 	// Radar Logic: Calculate Blips
 	radarBlips := make([]Blip, 0)

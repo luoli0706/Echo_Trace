@@ -13,6 +13,7 @@ class GameState:
         self.view_radius = 5.0
         self.my_inventory = []
         self.funds = 0
+        self.is_extracted = False
         
         # Global State
         self.phase = 0 # Default Init
@@ -48,6 +49,7 @@ class GameState:
             self.my_hp = s["hp"]
             self.view_radius = s["view_radius"]
             self.funds = s.get("funds", 0)
+            self.is_extracted = s.get("is_extracted", False)
             inv = s.get("inventory")
             self.my_inventory = inv if inv is not None else []
 

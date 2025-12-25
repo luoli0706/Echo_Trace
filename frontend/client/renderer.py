@@ -228,6 +228,9 @@ class Renderer:
         if state.my_hp <= 0:
             self.draw_death_overlay()
         
+        if getattr(state, "is_extracted", False):
+            self.draw_spectator_overlay()
+        
         if self.show_shop:
             self.draw_shop_menu(state)
             
@@ -415,6 +418,21 @@ class Renderer:
         txt = self.font.render(self.t("DEATH_TITLE"), True, (255,255,255))
         self.screen.blit(txt, txt.get_rect(center=(WINDOW_WIDTH//2, WINDOW_HEIGHT//2)))
 
+    def draw_spectator_overlay(self):
+        # Top Banner
+        s = pygame.Surface((WINDOW_WIDTH, 60), pygame.SRCALPHA)
+        s.fill((0, 255, 0, 100))
+        self.screen.blit(s, (0,0))
+        txt = self.font.render("EXTRACTION SUCCESSFUL - SPECTATOR MODE", True, (255,255,255))
+        self.screen.blit(txt, txt.get_rect(center=(WINDOW_WIDTH//2, 30)))
+        
+        # Exit Button
+        r = pygame.Rect(WINDOW_WIDTH//2 - 100, WINDOW_HEIGHT - 80, 200, 50)
+        pygame.draw.rect(self.screen, COLOR_BTN, r, border_radius=5)
+        pygame.draw.rect(self.screen, (0, 255, 0), r, 2, border_radius=5)
+        self.screen.blit(self.hud_font.render("EXIT TO MENU", True, (255,255,255)), (r.x+50, r.y+15))
+        self.spectator_exit_rect = r
+
     def draw_settings_menu(self):
         pygame.draw.rect(self.screen, COLOR_MENU_BG, self.settings_rect, border_radius=10)
         pygame.draw.rect(self.screen, (255,255,255), self.settings_rect, 2, border_radius=10)
@@ -505,19 +523,12 @@ class Renderer:
     def draw_ui_buttons(self): pass
     
     def handle_click(self, pos):
-        if self.state == "LOGIN":
-            if hasattr(self, 'login_back_rect') and self.login_back_rect.collidepoint(pos):
-                self.state = "CONNECT"
-                return True
-        if self.state == "MENU":
-            if hasattr(self, 'menu_back_rect') and self.menu_back_rect.collidepoint(pos):
-                self.state = "LOGIN"
-                return True
-        if self.state == "CONFIG":
-            if hasattr(self, 'config_back_rect') and self.config_back_rect.collidepoint(pos):
-                self.state = "MENU"
-                return True
-                
+        if hasattr(self, 'spectator_exit_rect') and self.spectator_exit_rect.collidepoint(pos):
+            self.state = "MENU"
+            # Cleanup
+            del self.spectator_exit_rect 
+            return True
+
         if self.state == "PAUSE":
             if self.show_settings:
                 if self.dev_mode_rect.collidepoint(pos):

@@ -14,7 +14,7 @@ type Room struct {
 	Broadcast  chan []byte
 	Register   chan *Client
 	Unregister chan *Client
-	GameState  *logic.GameState
+	GameLoop   *logic.GameLoop
 	Config     *logic.GameConfig
 	Mutex      sync.RWMutex
 }
@@ -26,16 +26,15 @@ func NewRoom(id string, cfg *logic.GameConfig) *Room {
 		Broadcast:  make(chan []byte),
 		Register:   make(chan *Client),
 		Unregister: make(chan *Client),
-		GameState:  logic.NewGameState(cfg),
+		GameLoop:   logic.NewGameLoop(cfg),
 		Config:     cfg,
 	}
 	return r
 }
 
 func (r *Room) Run() {
-	ticker := time.NewTicker(time.Duration(r.Config.Server.TickRateMs) * time.Millisecond)
-	defer ticker.Stop()
-
+	// Start Game Loop
+	go r.GameLoop.Run()
 	log.Printf("Room %s started. Tick: %dms", r.ID, r.Config.Server.TickRateMs)
 	
 	lastPhase := logic.PhaseInit
@@ -45,7 +44,8 @@ func (r *Room) Run() {
 		case client := <-r.Register:
 			r.Mutex.Lock()
 			r.Clients[client] = true
-			p := r.GameState.AddPlayer(client.SessionID)
+			// Direct call to GameState is safe (Mutex)
+			p := r.GameLoop.GameState.AddPlayer(client.SessionID)
 
 			// Send Login Response
 			loginMsg := map[string]interface{}{
@@ -59,14 +59,14 @@ func (r *Room) Run() {
 			client.SendJSON(loginMsg)
 			
 			// IF Game already started, send Map info immediately
-			if r.GameState.Phase >= logic.PhaseSearch {
+			if r.GameLoop.GameState.Phase >= logic.PhaseSearch {
 				startMsg := map[string]interface{}{
 					"type": 3001,
 					"payload": map[string]interface{}{
-						"map_width":  r.GameState.Map.Width,
-						"map_height": r.GameState.Map.Height,
+						"map_width":  r.GameLoop.GameState.Map.Width,
+						"map_height": r.GameLoop.GameState.Map.Height,
 						"spawn_pos":  p.Pos,
-						"map_tiles":  r.GameState.Map.Tiles,
+						"map_tiles":  r.GameLoop.GameState.Map.Tiles,
 						"inventory":  p.Inventory,
 					},
 				}
@@ -78,55 +78,59 @@ func (r *Room) Run() {
 			r.Mutex.Lock()
 			if _, ok := r.Clients[client]; ok {
 				delete(r.Clients, client)
-				r.GameState.RemovePlayer(client.SessionID)
+				r.GameLoop.GameState.RemovePlayer(client.SessionID)
 				close(client.Send)
 			}
 			r.Mutex.Unlock()
 
-		case <-ticker.C:
-			// Check Phase Transition (Init -> Search)
-			r.Mutex.RLock()
-			currentPhase := r.GameState.Phase
-			r.Mutex.RUnlock()
-
-			if lastPhase == logic.PhaseInit && currentPhase == logic.PhaseSearch {
-				log.Println("Game Started! Sending Map Info...")
-				r.Mutex.Lock()
-				for client := range r.Clients {
-					if p, ok := r.GameState.Players[client.SessionID]; ok {
-						startMsg := map[string]interface{}{
-							"type": 3001,
-							"payload": map[string]interface{}{
-								"map_width":  r.GameState.Map.Width,
-								"map_height": r.GameState.Map.Height,
-								"spawn_pos":  p.Pos,
-								"map_tiles":  r.GameState.Map.Tiles,
-								"inventory":  p.Inventory,
-							},
-						}
-						client.SendJSON(startMsg)
+		case snapshots := <-r.GameLoop.SnapshotChan:
+			var currentPhase int = -1
+			for _, s := range snapshots {
+				if m, ok := s.(map[string]interface{}); ok {
+					if p, ok := m["phase"].(int); ok {
+						currentPhase = p
+						break
 					}
 				}
-				r.Mutex.Unlock()
-				lastPhase = logic.PhaseSearch
+			}
+			
+			if currentPhase != -1 {
+				if lastPhase == logic.PhaseInit && currentPhase == logic.PhaseSearch {
+					log.Println("Game Started! Sending Map Info...")
+					r.Mutex.Lock()
+					for client := range r.Clients {
+						if p, ok := r.GameLoop.GameState.Players[client.SessionID]; ok {
+							startMsg := map[string]interface{}{
+								"type": 3001,
+								"payload": map[string]interface{}{
+									"map_width":  r.GameLoop.GameState.Map.Width,
+									"map_height": r.GameLoop.GameState.Map.Height,
+									"spawn_pos":  p.Pos,
+									"map_tiles":  r.GameLoop.GameState.Map.Tiles,
+									"inventory":  p.Inventory,
+								},
+							}
+							client.SendJSON(startMsg)
+						}
+					}
+					r.Mutex.Unlock()
+					lastPhase = logic.PhaseSearch
+				}
 			}
 
-			// 1. Update Physics
-			dt := float64(r.Config.Server.TickRateMs) / 1000.0
-			r.GameState.UpdateTick(dt)
-
-			// 2. Broadcast State (AOI filtered)
+			// Broadcast State
 			r.Mutex.RLock()
 			for client := range r.Clients {
-				snapshot := r.GameState.GetSnapshot(client.SessionID)
-				msg := map[string]interface{}{
-					"type":    3002,
-					"payload": snapshot,
-				}
-				
-				select {
-				case client.Send <- toJSON(msg):
-				default:
+				if snap, ok := snapshots[client.SessionID]; ok {
+					msg := map[string]interface{}{
+						"type":    3002,
+						"payload": snap,
+					}
+					
+					select {
+					case client.Send <- toJSON(msg):
+					default:
+					}
 				}
 			}
 			r.Mutex.RUnlock()

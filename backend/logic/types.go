@@ -59,6 +59,7 @@ type Player struct {
 	// Extraction
 	IsExtracting    bool    `json:"is_extracting"`
 	ExtractionTimer float64 `json:"extraction_timer"`
+	IsExtracted     bool    `json:"is_extracted"`
 }
 
 type Item struct {

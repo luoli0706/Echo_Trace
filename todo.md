@@ -45,13 +45,15 @@
 ## 📅 Sprint 4: 性能优化与重构 (Optimization & Refactoring)
 
 ### 1. 架构解耦 (Architecture)
-- [ ] **逻辑与网络分离 | Decouple Logic from Network**
+- [x] **逻辑与网络分离 | Decouple Logic from Network**
     - *重构:* 将 `Room` 拆分为 `GameLoop` (Simulation) 和 `NetworkManager`。
+    - *实现:* 创建了 `GameLoop`，使用 Channel 通信。
 
 ### 2. 物理与碰撞 (Physics)
-- [ ] **高级碰撞判定 | Advanced Collision**
+- [x] **高级碰撞判定 | Advanced Collision**
     - *升级:* 从网格判定升级为 AABB 或 圆形碰撞判定。
     - *参数:* 严格执行 0.5 半径。
+    - *实现:* `physics.go` 实现了 `ResolveMovement` (Circle-AABB with Sliding)。
 
 ### 3. 协议升级 (Protocol Migration)
 - [ ] **Protobuf 迁移 | Protobuf Migration**

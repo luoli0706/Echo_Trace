@@ -75,65 +75,80 @@ func (c *Client) readPump() {
 
 		// Game Packets (Require Room)
 		if c.CurrentRoom == nil {
-			// Maybe send error?
 			continue
 		}
+
+		input := logic.PlayerInput{SessionID: c.SessionID}
 
 		switch typeCode {
 		case 1001: // LOGIN_REQ
 			if payload, ok := req["payload"].(map[string]interface{}); ok {
 				if name, ok := payload["name"].(string); ok {
-					c.CurrentRoom.GameState.SetPlayerName(c.SessionID, name)
+					input.Type = logic.InputLogin
+					input.Name = name
+					c.CurrentRoom.GameLoop.InputChan <- input
 				}
 			}
 		case 2001: // MOVE_REQ
 			if payload, ok := req["payload"].(map[string]interface{}); ok {
 				if dirMap, ok := payload["dir"].(map[string]interface{}); ok {
-					dir := logic.Vector2{
+					input.Type = logic.InputMove
+					input.Dir = logic.Vector2{
 						X: dirMap["x"].(float64),
 						Y: dirMap["y"].(float64),
 					}
-					c.CurrentRoom.GameState.HandleInput(c.SessionID, dir)
+					c.CurrentRoom.GameLoop.InputChan <- input
 				}
 			}
 		case 2002: // USE_ITEM_REQ
 			if payload, ok := req["payload"].(map[string]interface{}); ok {
+				input.Type = logic.InputUseItem
 				if slot, ok := payload["slot_index"].(float64); ok {
-					c.CurrentRoom.GameState.HandleUseItem(c.SessionID, int(slot))
-				} else {
-					c.CurrentRoom.GameState.HandleAttack(c.SessionID, "")
+					input.SlotIndex = int(slot)
+					c.CurrentRoom.GameLoop.InputChan <- input
 				}
 			}
 		case 2003: // INTERACT_REQ
-			c.CurrentRoom.GameState.HandleInteract(c.SessionID)
+			input.Type = logic.InputInteract
+			c.CurrentRoom.GameLoop.InputChan <- input
 		case 2004: // PICKUP_REQ
-			c.CurrentRoom.GameState.HandlePickup(c.SessionID)
+			input.Type = logic.InputPickup
+			c.CurrentRoom.GameLoop.InputChan <- input
 		case 2005: // DROP_REQ
 			if payload, ok := req["payload"].(map[string]interface{}); ok {
 				if slot, ok := payload["slot_index"].(float64); ok {
-					c.CurrentRoom.GameState.HandleDropItem(c.SessionID, int(slot))
+					input.Type = logic.InputDrop
+					input.SlotIndex = int(slot)
+					c.CurrentRoom.GameLoop.InputChan <- input
 				}
 			}
 		case 2006: // CHOOSE_TACTIC_REQ
 			if payload, ok := req["payload"].(map[string]interface{}); ok {
 				if tactic, ok := payload["tactic"].(string); ok {
-					c.CurrentRoom.GameState.HandleChooseTactic(c.SessionID, tactic)
+					input.Type = logic.InputTactic
+					input.Tactic = tactic
+					c.CurrentRoom.GameLoop.InputChan <- input
 				}
 			}
 		case 2007: // BUY_REQ
 			if payload, ok := req["payload"].(map[string]interface{}); ok {
 				if itemID, ok := payload["item_id"].(string); ok {
-					c.CurrentRoom.GameState.HandleBuyItem(c.SessionID, itemID)
+					input.Type = logic.InputBuy
+					input.ItemID = itemID
+					c.CurrentRoom.GameLoop.InputChan <- input
 				}
 			}
 		case 2008: // SELL_REQ
 			if payload, ok := req["payload"].(map[string]interface{}); ok {
 				if slot, ok := payload["slot_index"].(float64); ok {
-					c.CurrentRoom.GameState.HandleSellItem(c.SessionID, int(slot))
+					input.Type = logic.InputSell
+					input.SlotIndex = int(slot)
+					c.CurrentRoom.GameLoop.InputChan <- input
 				}
 			}
 		case 9001: // DEV_SKIP_PHASE
-			c.CurrentRoom.GameState.HandleDevSkipPhase()
+			input.Type = logic.InputDevSkip
+			c.CurrentRoom.GameLoop.InputChan <- input
 		}
 	}
 }
