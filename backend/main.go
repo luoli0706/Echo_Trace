@@ -17,7 +17,7 @@ var Config logic.GameConfig
 func main() {
 	// 0. Init Persistence
 	storage.InitDB("./game.db")
-	
+
 	// 0.1 Init Network Manager
 	network.InitManager()
 
@@ -31,9 +31,12 @@ func main() {
 		log.Fatalf("Parse config error: %v", err)
 	}
 
+	// Make loaded defaults available to room creation.
+	network.SetDefaultConfig(&Config)
+
 	// 3. Router Setup
 	mux := http.NewServeMux()
-	
+
 	// WebSocket Endpoint
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		network.ServeWs(w, r)
@@ -48,7 +51,7 @@ func main() {
 	// 4. Start Server
 	addr := ":8080"
 	log.Printf("Echo Trace Server listening on %s", addr)
-	
+
 	// Use the mux
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatal("ListenAndServe:", err)

@@ -12,8 +12,12 @@ class GameState:
         self.my_hp = 100
         self.view_radius = 5.0
         self.my_inventory = []
+        self.inventory_cap = 6
         self.funds = 0
         self.is_extracted = False
+
+        # Merchant
+        self.shop_stock = []
         
         # Global State
         self.phase = 0 # Default Init
@@ -52,6 +56,9 @@ class GameState:
             self.is_extracted = s.get("is_extracted", False)
             inv = s.get("inventory")
             self.my_inventory = inv if inv is not None else []
+            self.inventory_cap = s.get("inventory_cap", 6)
+            ss = s.get("shop_stock")
+            self.shop_stock = ss if ss is not None else []
 
         if "vision" in payload:
             self.players = {}

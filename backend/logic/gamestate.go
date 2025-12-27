@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"math/rand"
 	"sync"
 	"time"
 )
@@ -80,6 +81,11 @@ func (gs *GameState) HandleChooseTactic(sessionID, tactic string) bool {
 		tactic = "RECON" // Default
 	}
 	p.Tactic = tactic
+	gs.RecalculateStats(p)
+	// Ensure current HP doesn't exceed new MaxHP.
+	if p.HP > p.MaxHP {
+		p.HP = p.MaxHP
+	}
 
 	// Add Starting Gear based on Tactic (Example)
 	// p.Inventory = append(p.Inventory, ...)
@@ -108,7 +114,11 @@ func (gs *GameState) StartGame() {
 	gs.addEvent("GAME_START", "The Hunt Begins! Search for supplies.")
 
 	// Spawn Initial Items
-	for i := 0; i < 20; i++ {
+	initial := 20
+	if gs.Config != nil && gs.Config.Items.InitialWorldItemCount > 0 {
+		initial = gs.Config.Items.InitialWorldItemCount
+	}
+	for i := 0; i < initial; i++ {
 		gs.spawnRandomItemInternal()
 	}
 
@@ -116,28 +126,78 @@ func (gs *GameState) StartGame() {
 	gs.spawnPhaseSupplyDrops(1)
 
 	// Spawn Merchant
-	gs.spawnMerchant()
+	gs.spawnOrMoveMerchantForPhase(1)
+	gs.refreshAllPlayersShopStockForPhase(1)
 }
 
-func (gs *GameState) spawnMerchant() {
-	// Center spawn
-	pos := Vector2{X: float64(gs.Map.Width) / 2, Y: float64(gs.Map.Height) / 2}
-	// Find walkable near center
-	for r := 0; r < 5; r++ {
-		if gs.Map.IsWalkable(pos.X+float64(r), pos.Y) {
-			pos.X += float64(r)
-			break
+func (gs *GameState) merchantAnchorForPhase(phaseIdx int) Vector2 {
+	// Fixed per phase (deterministic) anchors, expressed as fractions of map size.
+	// Phase1: center-ish, Phase2: upper-left-ish, Phase3: lower-right-ish.
+	w := float64(gs.Map.Width)
+	h := float64(gs.Map.Height)
+	switch phaseIdx {
+	case 2:
+		return Vector2{X: w * 0.25, Y: h * 0.25}
+	case 3:
+		return Vector2{X: w * 0.75, Y: h * 0.75}
+	default:
+		return Vector2{X: w * 0.50, Y: h * 0.50}
+	}
+}
+
+func (gs *GameState) spawnOrMoveMerchantForPhase(phaseIdx int) {
+	// Remove existing merchants.
+	for uid, e := range gs.Entities {
+		if e.Type == EntityTypeMerchant {
+			delete(gs.Entities, uid)
+		}
+	}
+
+	anchor := gs.merchantAnchorForPhase(phaseIdx)
+	pos := Vector2{X: math.Floor(anchor.X), Y: math.Floor(anchor.Y)}
+	if pos.X < 1 {
+		pos.X = 1
+	}
+	if pos.Y < 1 {
+		pos.Y = 1
+	}
+	if pos.X >= float64(gs.Map.Width)-1 {
+		pos.X = float64(gs.Map.Width) - 2
+	}
+	if pos.Y >= float64(gs.Map.Height)-1 {
+		pos.Y = float64(gs.Map.Height) - 2
+	}
+
+	// Find nearby walkable tile in a small spiral.
+	best := pos
+	found := false
+	for r := 0; r <= 6 && !found; r++ {
+		for dy := -r; dy <= r && !found; dy++ {
+			for dx := -r; dx <= r && !found; dx++ {
+				x := pos.X + float64(dx)
+				y := pos.Y + float64(dy)
+				if gs.Map.IsWalkable(x, y) {
+					best = Vector2{X: x, Y: y}
+					found = true
+				}
+			}
 		}
 	}
 
 	uid := NewUID()
-	gs.Entities[uid] = Entity{
-		UID:   uid,
-		Type:  EntityTypeMerchant,
-		Pos:   pos,
-		State: 1,
+	gs.Entities[uid] = Entity{UID: uid, Type: EntityTypeMerchant, Pos: best, State: 1}
+	log.Printf("Merchant spawned for phase %d at %v", phaseIdx, best)
+}
+
+func (gs *GameState) refreshAllPlayersShopStockForPhase(phaseIdx int) {
+	for _, p := range gs.Players {
+		if p == nil {
+			continue
+		}
+		p.ShopStock = gs.generateShopStock(phaseIdx, p.Tactic)
+		// New phase => free refresh available again.
+		p.ShopFreeRefreshUsedPhase = 0
 	}
-	log.Printf("Merchant spawned at %v", pos)
 }
 
 func (gs *GameState) HandleDropItem(sessionID string, slotIndex int) {
@@ -230,6 +290,18 @@ func (gs *GameState) HandleBuyItem(sessionID string, itemID string) {
 		return
 	}
 
+	// Must be in current shop stock.
+	allowed := false
+	for _, sid := range p.ShopStock {
+		if sid == itemID {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		return
+	}
+
 	// Find Item Config
 	// Iterate ItemDB (Global var in item_system.go)
 	// We need to access ItemDB. It is in package logic.
@@ -247,36 +319,13 @@ func (gs *GameState) HandleBuyItem(sessionID string, itemID string) {
 		return
 	}
 
-	// Cost Logic: Buy Price = Value * 2 (or just hardcoded mapping matching frontend)
-	// Frontend has:
-	// T1: Shock 100, Med 50, Radar 150
-	// T2: Shock 200, Med 100, Radar 300
-	// T3: Shock 350, Radar 500
-
-	// Let's rely on item.Value if we set it, or simple switch
-	cost := 0
-	switch itemID {
-	case "WPN_SHOCK":
-		cost = 100
-	case "SURV_MEDKIT":
-		cost = 50
-	case "RECON_RADAR":
-		cost = 150
-	case "WPN_SHOCK_T2":
-		cost = 200
-	case "SURV_MEDKIT_T2":
-		cost = 100
-	case "RECON_RADAR_T2":
-		cost = 300
-	case "WPN_SHOCK_T3":
-		cost = 350
-	case "RECON_RADAR_T3":
-		cost = 500
-	default:
-		cost = 9999
+	// Cost Logic: use item.Value (fallback: 50 * tier)
+	cost := targetItem.Value
+	if cost <= 0 {
+		cost = 50 * targetItem.Tier
 	}
 
-	if p.Funds >= cost && len(p.Inventory) < 6 {
+	if p.Funds >= cost && len(p.Inventory) < p.InventoryCap {
 		p.Funds -= cost
 
 		newItem := targetItem
@@ -286,6 +335,51 @@ func (gs *GameState) HandleBuyItem(sessionID string, itemID string) {
 		gs.RecalculateStats(p)
 		log.Printf("Player %s bought %s for $%d", p.Name, itemID, cost)
 	}
+}
+
+func (gs *GameState) HandleShopRefresh(sessionID string) {
+	gs.Mutex.Lock()
+	defer gs.Mutex.Unlock()
+
+	if gs.Phase == PhaseInit {
+		return
+	}
+
+	p, ok := gs.Players[sessionID]
+	if !ok || !p.IsAlive {
+		return
+	}
+
+	// Must be near merchant.
+	nearMerchant := false
+	for _, e := range gs.Entities {
+		if e.Type == EntityTypeMerchant && Distance(p.Pos, e.Pos) <= 3.0 {
+			nearMerchant = true
+			break
+		}
+	}
+	if !nearMerchant {
+		return
+	}
+
+	phaseIdx := gs.currentLootPhaseIndex()
+
+	// One free refresh per phase per player.
+	free := p.ShopFreeRefreshUsedPhase != gs.Phase
+	if free {
+		p.ShopFreeRefreshUsedPhase = gs.Phase
+	} else {
+		cost := 120
+		if gs.Config != nil && gs.Config.Items.MerchantRefreshCost > 0 {
+			cost = gs.Config.Items.MerchantRefreshCost
+		}
+		if p.Funds < cost {
+			return
+		}
+		p.Funds -= cost
+	}
+
+	p.ShopStock = gs.generateShopStock(phaseIdx, p.Tactic)
 }
 
 func (gs *GameState) SetPlayerName(sessionID, name string) {
@@ -306,28 +400,142 @@ func (gs *GameState) AddPlayer(sessionID string) *Player {
 	defer gs.Mutex.Unlock()
 
 	spawnPos := gs.Map.GetRandomSpawnPos()
+	invCap := gs.Config.Gameplay.InventorySize
+	if invCap <= 0 {
+		invCap = 6
+	}
+	baseHP := gs.Config.Gameplay.BaseMaxHP
+	if baseHP <= 0 {
+		baseHP = 100
+	}
+	baseHear := gs.Config.Gameplay.HearRadius
+	if baseHear <= 0 {
+		baseHear = 12.0
+	}
+	baseMaxWeight := gs.Config.Gameplay.BaseMaxWeight
+	if baseMaxWeight <= 0 {
+		baseMaxWeight = 10.0
+	}
 	p := &Player{
-		SessionID:  sessionID,
-		Name:       "Unknown",
-		Pos:        spawnPos,
-		LookDir:    Vector2{X: 1, Y: 0},
-		HP:         100,
-		MaxHP:      100,
-		MoveSpeed:  gs.Config.Gameplay.BaseMoveSpeed,
-		ViewRadius: gs.Config.Gameplay.BaseViewRadius,
-		HearRadius: 12.0,
-		MaxWeight:  10.0,
-		Weight:     0.0,
-		IsAlive:    true,
-		Inventory:  make([]Item, 0),
-		Tactic:     "", // Not ready yet
+		SessionID:     sessionID,
+		Name:          "Unknown",
+		Pos:           spawnPos,
+		LookDir:       Vector2{X: 1, Y: 0},
+		HP:            baseHP,
+		MaxHP:         baseHP,
+		MoveSpeed:     gs.Config.Gameplay.BaseMoveSpeed,
+		ViewRadius:    gs.Config.Gameplay.BaseViewRadius,
+		HearRadius:    baseHear,
+		MaxWeight:     baseMaxWeight,
+		Weight:        0.0,
+		IsAlive:       true,
+		Inventory:     make([]Item, 0),
+		Tactic:        "", // Not ready yet
+		InventoryCap:  invCap,
+		BuffSpeedMult: 1.0,
 	}
 	gs.Players[sessionID] = p
+	gs.RecalculateStats(p)
 	return p
 }
 
 func (gs *GameState) RecalculateStats(p *Player) {
 	// Assumes Lock Held
+	now := time.Now()
+	invCap := gs.Config.Gameplay.InventorySize
+	if invCap <= 0 {
+		invCap = 6
+	}
+	baseHP := gs.Config.Gameplay.BaseMaxHP
+	if baseHP <= 0 {
+		baseHP = 100
+	}
+	baseHear := gs.Config.Gameplay.HearRadius
+	if baseHear <= 0 {
+		baseHear = 12.0
+	}
+	baseMaxWeight := gs.Config.Gameplay.BaseMaxWeight
+	if baseMaxWeight <= 0 {
+		baseMaxWeight = 10.0
+	}
+
+	maxHPMult := 1.0
+	moveMult := 1.0
+	viewMult := 1.0
+	hearMult := 1.0
+	if p.Tactic != "" {
+		switch p.Tactic {
+		case "RECON":
+			if gs.Config.Tactics.Recon.MaxHPMult > 0 {
+				maxHPMult = gs.Config.Tactics.Recon.MaxHPMult
+			}
+			if gs.Config.Tactics.Recon.MoveSpeedMult > 0 {
+				moveMult = gs.Config.Tactics.Recon.MoveSpeedMult
+			}
+			if gs.Config.Tactics.Recon.ViewRadiusMult > 0 {
+				viewMult = gs.Config.Tactics.Recon.ViewRadiusMult
+			}
+			if gs.Config.Tactics.Recon.HearRadiusMult > 0 {
+				hearMult = gs.Config.Tactics.Recon.HearRadiusMult
+			}
+		case "DEFENSE":
+			if gs.Config.Tactics.Defense.MaxHPMult > 0 {
+				maxHPMult = gs.Config.Tactics.Defense.MaxHPMult
+			}
+			if gs.Config.Tactics.Defense.MoveSpeedMult > 0 {
+				moveMult = gs.Config.Tactics.Defense.MoveSpeedMult
+			}
+			if gs.Config.Tactics.Defense.ViewRadiusMult > 0 {
+				viewMult = gs.Config.Tactics.Defense.ViewRadiusMult
+			}
+			if gs.Config.Tactics.Defense.HearRadiusMult > 0 {
+				hearMult = gs.Config.Tactics.Defense.HearRadiusMult
+			}
+		case "TRAP":
+			if gs.Config.Tactics.Trap.MaxHPMult > 0 {
+				maxHPMult = gs.Config.Tactics.Trap.MaxHPMult
+			}
+			if gs.Config.Tactics.Trap.MoveSpeedMult > 0 {
+				moveMult = gs.Config.Tactics.Trap.MoveSpeedMult
+			}
+			if gs.Config.Tactics.Trap.ViewRadiusMult > 0 {
+				viewMult = gs.Config.Tactics.Trap.ViewRadiusMult
+			}
+			if gs.Config.Tactics.Trap.HearRadiusMult > 0 {
+				hearMult = gs.Config.Tactics.Trap.HearRadiusMult
+			}
+		}
+	}
+
+	// Base stats (recomputed each time)
+	invBonus := 0
+	if now.Before(p.BuffInvCapUntil) {
+		invBonus = p.BuffInvCapBonus
+	}
+	maxWeightBonus := 0.0
+	if now.Before(p.BuffMaxWeightUntil) {
+		maxWeightBonus = p.BuffMaxWeightBonus
+	}
+	viewBonus := 0.0
+	if now.Before(p.BuffViewUntil) {
+		viewBonus = p.BuffViewBonus
+	}
+	hearBonus := 0.0
+	if now.Before(p.BuffHearUntil) {
+		hearBonus = p.BuffHearBonus
+	}
+	speedBuffMult := 1.0
+	if now.Before(p.BuffSpeedUntil) && p.BuffSpeedMult > 0 {
+		speedBuffMult = p.BuffSpeedMult
+	}
+
+	p.InventoryCap = invCap + invBonus
+	p.MaxWeight = baseMaxWeight + maxWeightBonus
+	p.MaxHP = baseHP * maxHPMult
+	p.ViewRadius = (gs.Config.Gameplay.BaseViewRadius * viewMult) + viewBonus
+	p.HearRadius = (baseHear * hearMult) + hearBonus
+
+	// Weight always depends on what you carry.
 	totalWeight := 0.0
 	for _, item := range p.Inventory {
 		totalWeight += item.Weight
@@ -340,7 +548,7 @@ func (gs *GameState) RecalculateStats(p *Player) {
 	}
 
 	// Speed penalty up to 60%
-	p.MoveSpeed = gs.Config.Gameplay.BaseMoveSpeed * (1.0 - ratio*0.6)
+	p.MoveSpeed = (gs.Config.Gameplay.BaseMoveSpeed * moveMult * speedBuffMult) * (1.0 - ratio*0.6)
 	if p.MoveSpeed < 2.0 {
 		p.MoveSpeed = 2.0
 	}
@@ -535,15 +743,42 @@ func (gs *GameState) UpdateTick(dt float64) {
 	// 3. Item Respawn (Optimized)
 	gs.RespawnTimer -= dt
 	if gs.RespawnTimer <= 0 {
-		gs.RespawnTimer = 5.0 // Faster respawn check
+		interval := 5.0
+		if gs.Config != nil && gs.Config.Items.RespawnIntervalSec > 0 {
+			interval = gs.Config.Items.RespawnIntervalSec
+		}
+		gs.RespawnTimer = interval
 		itemCount := 0
 		for _, e := range gs.Entities {
 			if e.Type == EntityTypeItemDrop {
 				itemCount++
 			}
 		}
-		// Higher cap to simulate longer persistence
-		if itemCount < 100 {
+		cap := 60
+		if gs.Config != nil {
+			phaseIdx := 1
+			if gs.Phase == PhaseConflict {
+				phaseIdx = 2
+			} else if gs.Phase == PhaseEscape {
+				phaseIdx = 3
+			}
+			switch phaseIdx {
+			case 1:
+				if gs.Config.Items.MaxWorldItemCount.Phase1 > 0 {
+					cap = gs.Config.Items.MaxWorldItemCount.Phase1
+				}
+			case 2:
+				if gs.Config.Items.MaxWorldItemCount.Phase2 > 0 {
+					cap = gs.Config.Items.MaxWorldItemCount.Phase2
+				}
+			case 3:
+				if gs.Config.Items.MaxWorldItemCount.Phase3 > 0 {
+					cap = gs.Config.Items.MaxWorldItemCount.Phase3
+				}
+			}
+		}
+
+		if itemCount < cap {
 			gs.spawnRandomItemInternal()
 		}
 	}
@@ -551,6 +786,12 @@ func (gs *GameState) UpdateTick(dt float64) {
 	// 4. Physics
 	// Optimized Collision Radius (0.5) to avoid getting stuck
 	playerRadius := 0.25 // Visual size is 0.5, so radius 0.25 fits nicely
+	// Recompute stats each tick so timed buffs expire correctly and weight penalties stay accurate.
+	for _, p := range gs.Players {
+		if p != nil && p.IsAlive {
+			gs.RecalculateStats(p)
+		}
+	}
 	for _, p := range gs.Players {
 		if !p.IsAlive {
 			continue
@@ -579,9 +820,13 @@ func (gs *GameState) nextPhase() {
 		gs.addEvent("PHASE_CHANGE", "Phase 2: Conflict! Fix 2 Motors to escape.")
 		gs.spawnMotors(5)
 		gs.spawnPhaseSupplyDrops(2)
+		gs.spawnOrMoveMerchantForPhase(2)
+		gs.refreshAllPlayersShopStockForPhase(2)
 	} else if gs.Phase == PhaseEscape {
 		gs.startEscapePhase()
 		gs.spawnPhaseSupplyDrops(3)
+		gs.spawnOrMoveMerchantForPhase(3)
+		gs.refreshAllPlayersShopStockForPhase(3)
 	}
 }
 
@@ -733,8 +978,13 @@ func (gs *GameState) GetSnapshot(sessionID string) map[string]interface{} {
 
 	// Sound Logic (Hearing)
 	soundEvents := make([]map[string]interface{}, 0)
+	now := time.Now()
 	for _, other := range gs.Players {
 		if other.SessionID == sessionID || !other.IsAlive {
+			continue
+		}
+		// Silent buff: do not emit footsteps at all.
+		if now.Before(other.BuffSilentUntil) {
 			continue
 		}
 
@@ -752,6 +1002,13 @@ func (gs *GameState) GetSnapshot(sessionID string) map[string]interface{} {
 				intensity := 1.0 - (dist / p.HearRadius)
 				if intensity < 0 {
 					intensity = 0
+				}
+
+				// Jammer buff: scramble perceived direction + dampen intensity.
+				if now.Before(other.BuffJammerUntil) {
+					ang := rand.Float64() * 2.0 * math.Pi
+					dir = Vector2{X: math.Cos(ang), Y: math.Sin(ang)}
+					intensity *= 0.25
 				}
 
 				soundEvents = append(soundEvents, map[string]interface{}{
@@ -781,15 +1038,5 @@ func (gs *GameState) GetSnapshot(sessionID string) map[string]interface{} {
 }
 
 func (gs *GameState) spawnRandomItemInternal() {
-	keys := []string{"WPN_SHOCK", "SURV_MEDKIT", "RECON_RADAR"}
-	choice := keys[time.Now().UnixNano()%3]
-	item := ItemDB[choice]
-	item.UID = NewUID()
-	gs.Entities[item.UID] = Entity{
-		UID:   item.UID,
-		Type:  EntityTypeItemDrop,
-		Pos:   gs.Map.GetRandomSpawnPos(),
-		State: 1,
-		Extra: item,
-	}
+	_ = gs.spawnWeightedRandomItemAt(gs.Map.GetRandomSpawnPos())
 }

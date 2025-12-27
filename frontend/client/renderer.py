@@ -3,6 +3,7 @@ import math, time, os
 from datetime import datetime
 from client.config import *
 from client.i18n import i18n
+from client.item_manual import CATEGORY_ORDER, get_item_abbr, get_item_name, get_item_use
 
 class Renderer:
     def __init__(self, screen):
@@ -31,7 +32,12 @@ class Renderer:
         self.state = "CONNECT"; self.server_input = "ws://localhost:8080/ws"; self.name_input = "Agent_07"
         self.config_inputs = { "max_players": "6", "motors": "5", "p1_dur": "120", "p2_dur": "180" }
         self.config_active_idx = 0; self.config_keys = ["max_players", "motors", "p1_dur", "p2_dur"]
-        self.show_settings = self.show_help = self.show_shop = self.dev_mode = self.spectator_mode = False
+        self.show_shop = self.dev_mode = self.spectator_mode = False
+        # Pause UI routing stack: ["root" -> "settings"/"help"/"item_manual"].
+        self.pause_route = []
+        # Item manual scroll state
+        self.item_manual_scroll = 0
+        self.item_manual_content_height = 0
         self.mouse_sensitivity = 1.0
         self.look_angle = 0.0  # radians
         self.fov_degrees = 90.0
@@ -57,14 +63,37 @@ class Renderer:
         self.pause_rects = {
             "resume": pygame.Rect(WINDOW_WIDTH//2 - 100, 200, 200, 50),
             "settings": pygame.Rect(WINDOW_WIDTH//2 - 100, 270, 200, 50),
-            "help": pygame.Rect(WINDOW_WIDTH//2 - 100, 340, 200, 50),
-            "quit": pygame.Rect(WINDOW_WIDTH//2 - 100, 450, 200, 50),
+            "item_manual": pygame.Rect(WINDOW_WIDTH//2 - 100, 340, 200, 50),
+            "help": pygame.Rect(WINDOW_WIDTH//2 - 100, 410, 200, 50),
+            "quit": pygame.Rect(WINDOW_WIDTH//2 - 100, 480, 200, 50),
         }
         self.results_rects = {
             "spectate": pygame.Rect(WINDOW_WIDTH//2 - 210, WINDOW_HEIGHT//2 + 50, 200, 50),
             "quit": pygame.Rect(WINDOW_WIDTH//2 + 10, WINDOW_HEIGHT//2 + 50, 200, 50),
         }
         self.menu_rects = {}; self.pulse_start_time = 0
+
+    def pause_open(self):
+        if not self.pause_route:
+            self.pause_route = ["root"]
+
+    def pause_view(self):
+        if not self.pause_route:
+            return "root"
+        return self.pause_route[-1]
+
+    def pause_push(self, view: str):
+        self.pause_open()
+        if view and view != self.pause_view():
+            self.pause_route.append(view)
+        if view == "item_manual":
+            self.item_manual_scroll = 0
+
+    def pause_pop(self):
+        if len(self.pause_route) > 1:
+            self.pause_route.pop()
+        if self.pause_view() != "item_manual":
+            self.item_manual_scroll = 0
 
     def t(self, key): return i18n.t(key)
     def world_to_screen(self, wx, wy, cam_x, cam_y):
@@ -278,8 +307,13 @@ class Renderer:
         if self.show_shop: self.draw_shop_menu(state)
         if self.state == "PAUSE":
             self.draw_pause_menu()
-            if self.show_settings: self.draw_settings_menu()
-            if self.show_help: self.draw_help_menu()
+            view = self.pause_view()
+            if view == "settings":
+                self.draw_settings_menu()
+            elif view == "help":
+                self.draw_help_menu()
+            elif view == "item_manual":
+                self.draw_item_manual_menu()
 
     def draw_connect(self):
         self.screen.fill(COLOR_BG); t = self.font.render(self.t("CONNECT_TITLE"), True, (0, 255, 255))
@@ -325,7 +359,13 @@ class Renderer:
         overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA); overlay.fill((0, 0, 0, 180)); self.screen.blit(overlay, (0,0))
         pygame.draw.rect(self.screen, COLOR_MENU_BG, (WINDOW_WIDTH//2 - 150, 100, 300, 500), border_radius=10)
         t = self.font.render(self.t("PAUSE_TITLE"), True, (0, 255, 255)); self.screen.blit(t, t.get_rect(center=(WINDOW_WIDTH//2, 150)))
-        lbls = {"resume": self.t("BTN_RESUME"), "settings": self.t("BTN_SETTINGS"), "help": self.t("BTN_HELP"), "quit": self.t("BTN_QUIT")}
+        lbls = {
+            "resume": self.t("BTN_RESUME"),
+            "settings": self.t("BTN_SETTINGS"),
+            "item_manual": self.t("BTN_ITEM_MANUAL"),
+            "help": self.t("BTN_HELP"),
+            "quit": self.t("BTN_QUIT"),
+        }
         for key, rect in self.pause_rects.items():
             pygame.draw.rect(self.screen, COLOR_BTN, rect, border_radius=5); pygame.draw.rect(self.screen, (0, 255, 255), rect, 1, border_radius=5)
             s = self.hud_font.render(lbls[key], True, (255, 255, 255)); self.screen.blit(s, s.get_rect(center=rect.center))
@@ -370,10 +410,19 @@ class Renderer:
         except: pass
 
     def draw_inventory(self, state):
-        for i in range(6):
+        cap = int(getattr(state, "inventory_cap", 6) or 6)
+        # If a timed buff expires and cap shrinks, keep showing overflow items so players can still see/sell/drop them.
+        cap = max(cap, len(state.my_inventory))
+        for i in range(cap):
             r = pygame.Rect(300 + i*60, WINDOW_HEIGHT-70, 50, 50); pygame.draw.rect(self.screen, COLOR_INV_BG, r, border_radius=5)
             if i < len(state.my_inventory):
-                name = state.my_inventory[i].get("name", "???"); self.screen.blit(self.hud_font.render(name[:3], True, (255,255,255)), (r.x+5, r.y+15))
+                iid = state.my_inventory[i].get("id") or state.my_inventory[i].get("ID")
+                if iid:
+                    ab = get_item_abbr(iid)
+                else:
+                    name = state.my_inventory[i].get("name", "???")
+                    ab = name[:3]
+                self.screen.blit(self.hud_font.render(ab, True, (255,255,255)), (r.x+5, r.y+15))
 
     def draw_events(self, state):
         y = 100;
@@ -422,18 +471,101 @@ class Renderer:
         pygame.draw.rect(self.screen, (200, 50, 50), br, border_radius=5); pygame.draw.rect(self.screen, (255, 255, 255), br, 2, border_radius=5)
         self.screen.blit(self.hud_font.render("BACK", True, (255,255,255)), (br.x+40, br.y+10)); self.help_back_rect = br
 
+    def draw_item_manual_menu(self):
+        pygame.draw.rect(self.screen, COLOR_MENU_BG, self.help_rect, border_radius=10); pygame.draw.rect(self.screen, (255,255,255), self.help_rect, 2, border_radius=10)
+        t = self.font.render(self.t("ITEM_MANUAL_TITLE"), True, (0,255,255)); self.screen.blit(t, (self.help_rect.x+20, self.help_rect.y+20))
+
+        # Scrollable content area
+        content_rect = pygame.Rect(self.help_rect.x + 20, self.help_rect.y + 70, self.help_rect.width - 40, self.help_rect.height - 140)
+        x0 = content_rect.x
+        max_w = content_rect.width
+
+        def wrap_lines(text: str):
+            # CJK-friendly wrapping: wrap by character width.
+            lines = []
+            for para in str(text).split("\n"):
+                if para == "":
+                    lines.append("")
+                    continue
+                cur = ""
+                for ch in para:
+                    test = cur + ch
+                    if cur and self.hud_font.size(test)[0] > max_w:
+                        lines.append(cur)
+                        cur = ch
+                    else:
+                        cur = test
+                if cur:
+                    lines.append(cur)
+            return lines
+
+        def measure_content_height():
+            yy = content_rect.y
+            for cat, ids in CATEGORY_ORDER:
+                yy += 22
+                for iid in ids:
+                    ab = get_item_abbr(iid)
+                    nm = get_item_name(iid)
+                    use = get_item_use(iid)
+                    for _ in wrap_lines(f"{ab}  {nm} ({iid})"):
+                        yy += 22
+                    if use:
+                        for _ in wrap_lines(f"- {use}"):
+                            yy += 22
+                    yy += 6
+                yy += 8
+            return max(0, yy - content_rect.y)
+
+        self.item_manual_content_height = measure_content_height()
+        max_scroll = max(0, self.item_manual_content_height - content_rect.height)
+        if self.item_manual_scroll < 0:
+            self.item_manual_scroll = 0
+        if self.item_manual_scroll > max_scroll:
+            self.item_manual_scroll = max_scroll
+
+        prev_clip = self.screen.get_clip()
+        self.screen.set_clip(content_rect)
+
+        y = content_rect.y - int(self.item_manual_scroll)
+        for cat, ids in CATEGORY_ORDER:
+            self.screen.blit(self.hud_font.render(f"[{cat}]", True, (255,215,0)), (x0, y)); y += 22
+            for iid in ids:
+                ab = get_item_abbr(iid)
+                nm = get_item_name(iid)
+                use = get_item_use(iid)
+                for ln in wrap_lines(f"{ab}  {nm} ({iid})"):
+                    self.screen.blit(self.hud_font.render(ln, True, (255,255,255)), (x0, y))
+                    y += 22
+                if use:
+                    for ln in wrap_lines(f"- {use}"):
+                        self.screen.blit(self.hud_font.render(ln, True, (180,180,180)), (x0, y))
+                        y += 22
+                y += 6
+            y += 8
+
+        self.screen.set_clip(prev_clip)
+
+        br = pygame.Rect(self.help_rect.centerx - 60, self.help_rect.bottom - 60, 120, 40)
+        pygame.draw.rect(self.screen, (200, 50, 50), br, border_radius=5); pygame.draw.rect(self.screen, (255, 255, 255), br, 2, border_radius=5)
+        self.screen.blit(self.hud_font.render("BACK", True, (255,255,255)), (br.x+40, br.y+10)); self.item_manual_back_rect = br
+
+    def scroll_item_manual(self, delta_px: int):
+        if self.pause_view() != "item_manual":
+            return
+        self.item_manual_scroll += int(delta_px)
+
     def draw_shop_menu(self, state):
         pygame.draw.rect(self.screen, COLOR_MENU_BG, self.shop_rect, border_radius=10); pygame.draw.rect(self.screen, (255,215,0), self.shop_rect, 2, border_radius=10)
         self.screen.blit(self.font.render(self.t("SHOP_TITLE"), True, (255,215,0)), (self.shop_rect.x+20, self.shop_rect.y+20))
         self.screen.blit(self.font.render(f"{self.t('SHOP_FUNDS')} ${state.funds}", True, (0, 255, 0)), (self.shop_rect.x + 200, self.shop_rect.y + 20))
         items = []
-        if state.phase == 1: items = [(self.t("ITEM_STUN"), "WPN_SHOCK", 100), (self.t("ITEM_MED"), "SURV_MEDKIT", 50), (self.t("ITEM_SCAN"), "RECON_RADAR", 150)]
-        elif state.phase == 2: items = [(self.t("ITEM_TASER"), "WPN_SHOCK_T2", 200), (self.t("ITEM_MED_PLUS"), "SURV_MEDKIT_T2", 100), (self.t("ITEM_SCAN_PRO"), "RECON_RADAR_T2", 300)]
-        elif state.phase >= 3: items = [(self.t("ITEM_VOLT"), "WPN_SHOCK_T3", 350), (self.t("ITEM_SCAN_GLOBAL"), "RECON_RADAR_T3", 500), (self.t("ITEM_MED_PLUS"), "SURV_MEDKIT_T2", 100)]
+        stock = getattr(state, "shop_stock", []) or []
+        for iid in stock[:6]:
+            items.append((f"{get_item_abbr(iid)} {get_item_name(iid)}", iid))
         y = 70;
-        for n, pid, c in items:
-            color = (255, 255, 255) if state.funds >= c else (100, 100, 100)
-            self.screen.blit(self.hud_font.render(f"{n} - ${c} [{items.index((n,pid,c))+1}]", True, color), (self.shop_rect.x+30, self.shop_rect.y+y)); y += 40
+        for idx, it in enumerate(items):
+            n, pid = it
+            self.screen.blit(self.hud_font.render(f"{idx+1}. {n}", True, (255,255,255)), (self.shop_rect.x+30, self.shop_rect.y+y)); y += 34
         self.screen.blit(self.hud_font.render(self.t("SHOP_HINT"), True, (150, 150, 150)), (self.shop_rect.x+30, self.shop_rect.y+350))
         br = pygame.Rect(self.shop_rect.centerx - 60, self.shop_rect.bottom - 50, 120, 40)
         pygame.draw.rect(self.screen, (200, 50, 50), br, border_radius=5); pygame.draw.rect(self.screen, (255, 255, 255), br, 2, border_radius=5)
@@ -459,17 +591,20 @@ class Renderer:
                 return True
 
         if self.state == "PAUSE":
-            if self.show_settings:
+            view = self.pause_view()
+            if view == "settings":
                 if self.dev_mode_rect.collidepoint(pos): self.dev_mode = not self.dev_mode; return True
                 if self.lang_rect.collidepoint(pos): i18n.set_lang("en" if i18n.lang == "zh" else "zh"); return True
                 if self.sens_minus_rect.collidepoint(pos):
                     self.mouse_sensitivity = max(0.1, round(self.mouse_sensitivity - 0.1, 1)); return True
                 if self.sens_plus_rect.collidepoint(pos):
                     self.mouse_sensitivity = min(5.0, round(self.mouse_sensitivity + 0.1, 1)); return True
-                if self.back_btn_rect.collidepoint(pos): self.show_settings = False; return True
-            elif self.show_help:
-                if hasattr(self, 'help_back_rect') and self.help_back_rect.collidepoint(pos): self.show_help = False; return True
-                if self.back_btn_rect.collidepoint(pos): self.show_help = False; return True
+                if self.back_btn_rect.collidepoint(pos): self.pause_pop(); return True
+            elif view == "help":
+                if hasattr(self, 'help_back_rect') and self.help_back_rect.collidepoint(pos): self.pause_pop(); return True
+                if self.back_btn_rect.collidepoint(pos): self.pause_pop(); return True
+            elif view == "item_manual":
+                if hasattr(self, 'item_manual_back_rect') and self.item_manual_back_rect.collidepoint(pos): self.pause_pop(); return True
         if self.show_shop:
             if hasattr(self, 'shop_back_rect') and self.shop_back_rect.collidepoint(pos): self.show_shop = False; return True
         return False

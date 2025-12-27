@@ -15,6 +15,29 @@ type RoomManager struct {
 
 var GlobalManager *RoomManager
 
+var defaultConfig logic.GameConfig
+var hasDefaultConfig bool
+
+// SetDefaultConfig sets the baseline config used for newly created rooms.
+// The value is copied to avoid sharing mutable state.
+func SetDefaultConfig(cfg *logic.GameConfig) {
+	if cfg == nil {
+		hasDefaultConfig = false
+		defaultConfig = logic.GameConfig{}
+		return
+	}
+	defaultConfig = *cfg
+	hasDefaultConfig = true
+}
+
+func getDefaultConfigClone() *logic.GameConfig {
+	if hasDefaultConfig {
+		cfg := defaultConfig
+		return &cfg
+	}
+	return &logic.GameConfig{}
+}
+
 func InitManager() {
 	GlobalManager = &RoomManager{
 		Rooms: make(map[string]*Room),

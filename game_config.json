@@ -28,12 +28,76 @@
     "_comment_view": "玩家的视觉半径（米）。",
     "hear_radius": 12.0,
     "_comment_hear": "玩家的听觉半径（米），用于探测脚步声。",
+    "base_max_hp": 100.0,
+    "_comment_hp": "玩家基础最大生命值。",
+    "base_max_weight": 10.0,
+    "_comment_w": "玩家基础最大负重。",
     "weight_threshold_noise_double": 0.5,
     "_comment_w_noise": "负重超过此比例（0-1）时，移动噪音半径翻倍。",
     "weight_threshold_view_reduce": 0.8,
     "_comment_w_view": "负重超过此比例时，视野半径开始缩小。",
     "weight_threshold_immobilize": 1.0,
     "_comment_w_immob": "负重达到此比例时，无法进行交互（如破译）。"
+  },
+  "items": {
+    "initial_world_item_count": 15,
+    "_comment_init": "开局散落道具数量（整体密度略降低）。",
+    "respawn_interval_sec": 5.0,
+    "_comment_respawn": "散落道具补充检查间隔。",
+    "max_world_item_count": {
+      "phase_1": 60,
+      "phase_2": 50,
+      "phase_3": 40
+    },
+    "_comment_cap": "各阶段世界中散落道具上限（随阶段降低）。",
+    "tier_weights_by_phase": {
+      "phase_1": { "tier_1": 0.70, "tier_2": 0.25, "tier_3": 0.05 },
+      "phase_2": { "tier_1": 0.30, "tier_2": 0.50, "tier_3": 0.20 },
+      "phase_3": { "tier_1": 0.10, "tier_2": 0.40, "tier_3": 0.50 }
+    },
+    "_comment_tiers": "对应 Items.md 的阶段-Tier 权重矩阵。",
+    "scavenge_share_by_phase": {
+      "phase_1": 0.20,
+      "phase_2": 0.15,
+      "phase_3": 0.10
+    },
+    "_comment_scav": "搜索类（Scavenge）在不同阶段的占比（P1 高、后期降低）。",
+    "tactic_focus_share": 0.50,
+    "_comment_focus": "在非搜索类剩余概率中，战术主类占比（例如 0.5 => 剩余80%里主类40%，其余各20%）。",
+    "merchant_stock_size": 6,
+    "_comment_shop_size": "NPC商人每次展示的商品数量（建议6，对应数字键1-6购买）。",
+    "merchant_refresh_cost": 120,
+    "_comment_shop_refresh": "每个玩家每阶段首次刷新免费；之后每次刷新消耗的资金。"
+  },
+  "tactics": {
+    "RECON": {
+      "max_hp_mult": 1.0,
+      "move_speed_mult": 1.0,
+      "view_radius_mult": 1.15,
+      "hear_radius_mult": 1.15,
+      "heal_effect_mult": 0.95,
+      "damage_effect_mult": 0.95,
+      "recon_effect_mult": 1.20
+    },
+    "DEFENSE": {
+      "max_hp_mult": 1.15,
+      "move_speed_mult": 0.98,
+      "view_radius_mult": 0.95,
+      "hear_radius_mult": 1.0,
+      "heal_effect_mult": 1.15,
+      "damage_effect_mult": 0.95,
+      "recon_effect_mult": 0.95
+    },
+    "TRAP": {
+      "max_hp_mult": 0.95,
+      "move_speed_mult": 1.02,
+      "view_radius_mult": 1.0,
+      "hear_radius_mult": 1.0,
+      "heal_effect_mult": 0.95,
+      "damage_effect_mult": 1.15,
+      "recon_effect_mult": 1.0
+    },
+    "_comment": "战术倾向对初始属性与道具效果的倍率（可由房主/服务器配置调整）。"
   },
   "combat": {
     "base_attack_damage": 25.0,

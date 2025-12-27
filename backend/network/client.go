@@ -157,6 +157,9 @@ func (c *Client) readPump() {
 					c.CurrentRoom.GameLoop.InputChan <- input
 				}
 			}
+		case 2009: // SHOP_REFRESH_REQ
+			input.Type = logic.InputShopRefresh
+			c.CurrentRoom.GameLoop.InputChan <- input
 		case 9001: // DEV_SKIP_PHASE
 			input.Type = logic.InputDevSkip
 			c.CurrentRoom.GameLoop.InputChan <- input
@@ -176,24 +179,10 @@ func (c *Client) handleCreateRoom(payload map[string]interface{}) {
 	// Minimal: Generate Room ID
 	roomID := fmt.Sprintf("room_%d", time.Now().Unix()%1000)
 
-	// Deep Copy Logic Config? Or create new.
-	// We need logic.GameConfig struct.
-	// Since we are inside network package, we need to import logic.
+	// Start from server defaults loaded from game_config.json.
+	cfg := getDefaultConfigClone()
 
-	cfg := &logic.GameConfig{}
-
-	// Basic default
-	cfg.Server.TickRateMs = 50
-	cfg.Server.MaxPlayers = 6
-	cfg.Map.Width = 32
-	cfg.Map.Height = 32
-	cfg.Map.WallDensity = 0.2
-	cfg.Gameplay.BaseMoveSpeed = 4.0
-	cfg.Gameplay.BaseViewRadius = 5.0
-	cfg.Phases.Phase1.Duration = 120
-	cfg.Phases.Phase2.Duration = 180
-
-	// Override from payload
+	// Override from payload (legacy flat fields).
 	if payload != nil {
 		if mp, ok := payload["max_players"].(float64); ok {
 			cfg.Server.MaxPlayers = int(mp)
@@ -206,6 +195,14 @@ func (c *Client) handleCreateRoom(payload map[string]interface{}) {
 		}
 		if m, ok := payload["motors"].(float64); ok {
 			cfg.Phases.Phase2.MotorsSpawnCount = int(m)
+		}
+
+		// Optional: allow a full nested config overlay.
+		// If provided, it should be a partial GameConfig-shaped object.
+		if rawCfg, ok := payload["config"].(map[string]interface{}); ok {
+			if b, err := json.Marshal(rawCfg); err == nil {
+				_ = json.Unmarshal(b, cfg)
+			}
 		}
 	}
 

@@ -101,6 +101,7 @@ def main():
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
                         renderer.state = "PAUSE"
+                        renderer.pause_open()
                         continue
                     
                     if event.key == pygame.K_F9 and renderer.dev_mode:
@@ -143,14 +144,17 @@ def main():
                     else:
                         # Shop is open
                         if event.key == pygame.K_f or event.key == pygame.K_ESCAPE: renderer.show_shop = False
-                        elif event.key >= pygame.K_1 and event.key <= pygame.K_3:
-                            ids = ["WPN_SHOCK", "SURV_MEDKIT", "RECON_RADAR"] 
-                            if state.phase == 2: ids = ["WPN_SHOCK_T2", "SURV_MEDKIT_T2", "RECON_RADAR_T2"]
-                            elif state.phase >= 3: ids = ["WPN_SHOCK_T3", "RECON_RADAR_T3", "SURV_MEDKIT_T2"]
-                            
-                            idx = event.key-pygame.K_1
-                            if idx < len(ids):
-                                net.send({"type": 2007, "payload": {"item_id": ids[idx]}})
+                        elif event.key == pygame.K_r:
+                            if net: net.send({"type": 2009, "payload": {}})
+                        elif event.key >= pygame.K_1 and event.key <= pygame.K_6:
+                            idx = event.key - pygame.K_1
+                            mods = pygame.key.get_mods()
+                            if mods & pygame.KMOD_CTRL or mods & pygame.KMOD_LCTRL:
+                                if net: net.send({"type": 2008, "payload": {"slot_index": idx}})
+                            else:
+                                stock = getattr(state, "shop_stock", []) or []
+                                if idx < len(stock):
+                                    net.send({"type": 2007, "payload": {"item_id": stock[idx]}})
 
                 if event.type == pygame.KEYUP:
                     if event.key in (pygame.K_w, pygame.K_s): input_dir[1] = 0
@@ -160,31 +164,53 @@ def main():
             if renderer.state == "PAUSE":
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
-                        renderer.show_settings = renderer.show_help = False
-                        renderer.state = "GAME"
+                        if renderer.pause_view() != "root":
+                            renderer.pause_pop()
+                        else:
+                            renderer.state = "GAME"
+
                 elif event.type == pygame.MOUSEBUTTONDOWN:
-                    if renderer.show_settings or renderer.show_help:
-                         renderer.handle_click(event.pos)
+                    # Mouse wheel (older pygame) for manual scrolling
+                    if renderer.pause_view() == "item_manual" and event.button in (4, 5):
+                        renderer.scroll_item_manual(-40 if event.button == 4 else 40)
+                        continue
+
+                    if renderer.pause_view() != "root":
+                        renderer.handle_click(event.pos)
                     else:
                         action = renderer.handle_pause_click(event.pos)
-                        if action == "resume": renderer.state = "GAME"
-                        elif action == "settings": renderer.show_settings = True
-                        elif action == "help": renderer.show_help = True
+                        if action == "resume":
+                            renderer.state = "GAME"
+                        elif action == "settings":
+                            renderer.pause_push("settings")
+                        elif action == "help":
+                            renderer.pause_push("help")
+                        elif action == "item_manual":
+                            renderer.pause_push("item_manual")
                         elif action == "quit":
                             renderer.state = "MENU"
-                            state = GameState() # Reset local
-                            renderer.show_settings = renderer.show_help = False
+                            state = GameState()  # Reset local
+                            renderer.pause_route = []
+
+                elif event.type == pygame.MOUSEWHEEL:
+                    if renderer.pause_view() == "item_manual":
+                        renderer.scroll_item_manual(-event.y * 40)
+
+                continue
 
         # Network
         if net:
             while not recv_q.empty():
                 msg = recv_q.get()
                 mt, pl = msg.get("type"), msg.get("payload")
-                if mt == 1012: renderer.state = "GAME"; state.config = pl.get("config")
-                elif mt == 3001: 
+                if mt == 1012:
+                    renderer.state = "GAME"
+                    state.config = pl.get("config")
+                elif mt == 3001:
                     state.map_tiles = pl["map_tiles"]
                     state.my_pos = [pl["spawn_pos"]["x"], pl["spawn_pos"]["y"]]
-                elif mt == 3002: state.update_from_server(pl)
+                elif mt == 3002:
+                    state.update_from_server(pl)
 
         # Logic
         if renderer.state == "GAME" and net:

@@ -15,6 +15,7 @@ const (
 	InputDrop
 	InputSell
 	InputBuy
+	InputShopRefresh
 	InputTactic
 	InputLogin
 	InputDevSkip
@@ -137,6 +138,8 @@ func (gl *GameLoop) handleInput(input PlayerInput) {
 		gs.HandleSellItem(sid, input.SlotIndex)
 	case InputBuy:
 		gs.HandleBuyItem(sid, input.ItemID)
+	case InputShopRefresh:
+		gs.HandleShopRefresh(sid)
 	case InputTactic:
 		gs.HandleChooseTactic(sid, input.Tactic)
 	case InputLogin:
