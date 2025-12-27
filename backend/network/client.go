@@ -32,7 +32,7 @@ func ServeWs(w http.ResponseWriter, r *http.Request) {
 	sessID := fmt.Sprintf("u_%d", time.Now().UnixNano())
 
 	client := &Client{CurrentRoom: nil, Conn: conn, Send: make(chan []byte, 256), SessionID: sessID}
-	
+
 	// Don't register yet. Wait for Join/Create.
 
 	go client.writePump()
@@ -58,7 +58,9 @@ func (c *Client) readPump() {
 		}
 
 		typeCodeFloat, ok := req["type"].(float64)
-		if !ok { continue }
+		if !ok {
+			continue
+		}
 		typeCode := int(typeCodeFloat)
 
 		// Room Management Packets
@@ -96,6 +98,15 @@ func (c *Client) readPump() {
 					input.Dir = logic.Vector2{
 						X: dirMap["x"].(float64),
 						Y: dirMap["y"].(float64),
+					}
+					if lookMap, ok := payload["look_dir"].(map[string]interface{}); ok {
+						// look_dir is optional for backward compatibility.
+						lx, lxOk := lookMap["x"].(float64)
+						ly, lyOk := lookMap["y"].(float64)
+						if lxOk && lyOk {
+							input.LookDir = logic.Vector2{X: lx, Y: ly}
+							input.HasLookDir = true
+						}
 					}
 					c.CurrentRoom.GameLoop.InputChan <- input
 				}
@@ -154,21 +165,23 @@ func (c *Client) readPump() {
 }
 
 func (c *Client) handleCreateRoom(payload map[string]interface{}) {
-	if c.CurrentRoom != nil { return } // Already in room
+	if c.CurrentRoom != nil {
+		return
+	} // Already in room
 
 	// Parse Config from payload or use Default
 	// For now, let's just use default config passed from main (we need access to it?)
 	// Or parse parts.
-	
+
 	// Minimal: Generate Room ID
 	roomID := fmt.Sprintf("room_%d", time.Now().Unix()%1000)
-	
+
 	// Deep Copy Logic Config? Or create new.
 	// We need logic.GameConfig struct.
 	// Since we are inside network package, we need to import logic.
-	
+
 	cfg := &logic.GameConfig{}
-	
+
 	// Basic default
 	cfg.Server.TickRateMs = 50
 	cfg.Server.MaxPlayers = 6
@@ -179,42 +192,52 @@ func (c *Client) handleCreateRoom(payload map[string]interface{}) {
 	cfg.Gameplay.BaseViewRadius = 5.0
 	cfg.Phases.Phase1.Duration = 120
 	cfg.Phases.Phase2.Duration = 180
-	
+
 	// Override from payload
 	if payload != nil {
-		if mp, ok := payload["max_players"].(float64); ok { cfg.Server.MaxPlayers = int(mp) }
-		if p1, ok := payload["phase1_dur"].(float64); ok { cfg.Phases.Phase1.Duration = int(p1) }
-		if p2, ok := payload["phase2_dur"].(float64); ok { cfg.Phases.Phase2.Duration = int(p2) }
-		if m, ok := payload["motors"].(float64); ok { cfg.Phases.Phase2.MotorsSpawnCount = int(m) }
+		if mp, ok := payload["max_players"].(float64); ok {
+			cfg.Server.MaxPlayers = int(mp)
+		}
+		if p1, ok := payload["phase1_dur"].(float64); ok {
+			cfg.Phases.Phase1.Duration = int(p1)
+		}
+		if p2, ok := payload["phase2_dur"].(float64); ok {
+			cfg.Phases.Phase2.Duration = int(p2)
+		}
+		if m, ok := payload["motors"].(float64); ok {
+			cfg.Phases.Phase2.MotorsSpawnCount = int(m)
+		}
 	}
 
 	room := GlobalManager.CreateRoom(roomID, cfg)
 	c.CurrentRoom = room
 	room.Register <- c
-	
+
 	c.SendJSON(map[string]interface{}{
 		"type": 1012, // ROOM_JOINED
 		"payload": map[string]interface{}{
-			"success": true, 
+			"success": true,
 			"room_id": roomID,
-			"config": cfg,
+			"config":  cfg,
 		},
 	})
 }
 
 func (c *Client) handleJoinRoom(payload map[string]interface{}) {
-	if c.CurrentRoom != nil { return }
-	
+	if c.CurrentRoom != nil {
+		return
+	}
+
 	// Auto join first available or by ID
 	var room *Room
-	
+
 	// For Alpha: Join "room_id" if provided, else any
 	if payload != nil {
 		if rid, ok := payload["room_id"].(string); ok {
 			room = GlobalManager.GetRoom(rid)
 		}
 	}
-	
+
 	if room == nil {
 		// Pick first
 		rooms := GlobalManager.ListRooms()
@@ -222,22 +245,22 @@ func (c *Client) handleJoinRoom(payload map[string]interface{}) {
 			room = GlobalManager.GetRoom(rooms[0])
 		}
 	}
-	
+
 	if room != nil {
 		c.CurrentRoom = room
 		room.Register <- c
 		c.SendJSON(map[string]interface{}{
 			"type": 1012, // ROOM_JOINED
 			"payload": map[string]interface{}{
-				"success": true, 
+				"success": true,
 				"room_id": room.ID,
-				"config": room.Config,
+				"config":  room.Config,
 			},
 		})
 	} else {
 		// Error
 		c.SendJSON(map[string]interface{}{
-			"type": 4001,
+			"type":    4001,
 			"payload": map[string]interface{}{"msg": "No rooms available. Create one!"},
 		})
 	}

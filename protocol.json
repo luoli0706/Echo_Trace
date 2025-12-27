@@ -89,6 +89,7 @@
       "type": 2001,
       "payload": {
         "dir": "Vector2 (normalized)",
+        "look_dir": "Vector2 (normalized, optional; player facing/vision direction)",
         "sprint": "bool (future use)"
       }
     },

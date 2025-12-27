@@ -24,11 +24,13 @@ type PlayerInput struct {
 	SessionID string
 	Type      InputType
 	// Payload fields (can be generic or specific)
-	Dir       Vector2
-	SlotIndex int
-	ItemID    string
-	Tactic    string
-	Name      string
+	Dir        Vector2
+	LookDir    Vector2
+	HasLookDir bool
+	SlotIndex  int
+	ItemID     string
+	Tactic     string
+	Name       string
 }
 
 type GameLoop struct {
@@ -57,7 +59,7 @@ func (gl *GameLoop) Run() {
 		select {
 		case input := <-gl.InputChan:
 			gl.handleInput(input)
-		
+
 		case <-ticker.C:
 			// 1. Physics & Logic Update
 			dt := float64(gl.GameState.Config.Server.TickRateMs) / 1000.0
@@ -70,31 +72,31 @@ func (gl *GameLoop) Run() {
 			// What about spectating players?
 			// In our previous fix, Extracted players remain in GameState.Players.
 			// So iterating gs.Players is enough.
-			
+
 			snapshots := make(map[string]interface{})
-			
+
 			// We need a read lock here? UpdateTick releases lock when done.
 			// GetSnapshot grabs RLock.
-			
+
 			// Optimization: Compute shared data once?
 			// For now, iterate keys.
 			// We need to know SessionIDs to generate for.
 			// GameState.Players has them.
-			
+
 			gl.GameState.Mutex.RLock()
 			ids := make([]string, 0, len(gl.GameState.Players))
 			for id := range gl.GameState.Players {
 				ids = append(ids, id)
 			}
 			gl.GameState.Mutex.RUnlock()
-			
+
 			for _, id := range ids {
 				snap := gl.GameState.GetSnapshot(id)
 				if snap != nil {
 					snapshots[id] = snap
 				}
 			}
-			
+
 			// Send to Network Layer
 			// Non-blocking send to avoid stalling loop if network is slow?
 			// Or blocking to ensure sync?
@@ -114,15 +116,15 @@ func (gl *GameLoop) Run() {
 func (gl *GameLoop) handleInput(input PlayerInput) {
 	// These methods already acquire Lock inside GameState
 	// If we move to pure Actor model, GameState methods shouldn't lock, GameLoop should own the lock.
-	// But for now, let's keep locks in GameState to minimize refactor risk, 
+	// But for now, let's keep locks in GameState to minimize refactor risk,
 	// just serialize calls here.
-	
+
 	gs := gl.GameState
 	sid := input.SessionID
 
 	switch input.Type {
 	case InputMove:
-		gs.HandleInput(sid, input.Dir)
+		gs.HandleInput(sid, input.Dir, input.LookDir, input.HasLookDir)
 	case InputUseItem:
 		gs.HandleUseItem(sid, input.SlotIndex)
 	case InputInteract:

@@ -24,6 +24,7 @@ def main():
 
     running = True
     while running:
+        dt = 1.0 / 60.0
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
@@ -187,13 +188,15 @@ def main():
 
         # Logic
         if renderer.state == "GAME" and net:
+            renderer.update_look_from_mouse(pygame.mouse.get_pos(), dt, state)
             if getattr(state, "is_extracted", False) and renderer.spectator_mode:
                 # Free Spectate Camera Movement
                 speed = 10.0 * (1.0/60.0) # approx dt
                 renderer.cam_offset[0] += input_dir[0] * speed
                 renderer.cam_offset[1] += input_dir[1] * speed
             elif state.phase > 0 and not renderer.show_shop:
-                net.send({"type": 2001, "payload": {"dir": {"x": float(input_dir[0]), "y": float(input_dir[1])}}})
+                lx, ly = renderer.get_look_dir()
+                net.send({"type": 2001, "payload": {"dir": {"x": float(input_dir[0]), "y": float(input_dir[1])}, "look_dir": {"x": float(lx), "y": float(ly)}}})
 
         renderer.draw_game(state)
         pygame.display.flip()

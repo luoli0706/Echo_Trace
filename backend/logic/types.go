@@ -19,11 +19,11 @@ type Entity struct {
 	Type  string      `json:"type"`
 	Pos   Vector2     `json:"pos"`
 	State int         `json:"state"` // For Motors: 0=Inactive, 1=Active, 2=Done
-	Extra interface{} `json:"extra,omitempty"` 
+	Extra interface{} `json:"extra,omitempty"`
 }
 
 type MotorData struct {
-	Progress float64 `json:"progress"` // 0.0 to 100.0
+	Progress    float64 `json:"progress"` // 0.0 to 100.0
 	MaxProgress float64 `json:"max_progress"`
 }
 
@@ -33,9 +33,12 @@ type SupplyDropData struct {
 }
 
 type Player struct {
-	SessionID  string  `json:"session_id"`
-	Name       string  `json:"name"`
-	Pos        Vector2 `json:"pos"`
+	SessionID string  `json:"session_id"`
+	Name      string  `json:"name"`
+	Pos       Vector2 `json:"pos"`
+	// LookDir is the player's facing / vision direction as a unit vector.
+	// It is used for AOI / Fog of War cone visibility.
+	LookDir    Vector2 `json:"look_dir"`
 	HP         float64 `json:"hp"`
 	MaxHP      float64 `json:"max_hp"`
 	MoveSpeed  float64 `json:"move_speed"`
@@ -43,19 +46,19 @@ type Player struct {
 	HearRadius float64 `json:"hear_radius"`
 	IsAlive    bool    `json:"is_alive"`
 	Tactic     string  `json:"tactic"`
-	
-	MaxWeight  float64 `json:"max_weight"`
-	Weight     float64 `json:"weight"`
-	Funds      int     `json:"funds"`
 
-	Velocity   Vector2 `json:"-"`
-	TargetDir  Vector2 `json:"-"`
-	Inventory  []Item  `json:"inventory"`
-	ShopStock  []string `json:"shop_stock"`
-	
+	MaxWeight float64 `json:"max_weight"`
+	Weight    float64 `json:"weight"`
+	Funds     int     `json:"funds"`
+
+	Velocity  Vector2  `json:"-"`
+	TargetDir Vector2  `json:"-"`
+	Inventory []Item   `json:"inventory"`
+	ShopStock []string `json:"shop_stock"`
+
 	// Interaction State
 	ChannelingTargetUID string `json:"channeling_target"` // UID of entity being interacted with
-	
+
 	// Extraction
 	IsExtracting    bool    `json:"is_extracting"`
 	ExtractionTimer float64 `json:"extraction_timer"`
@@ -75,8 +78,8 @@ type Item struct {
 
 type GameConfig struct {
 	Server struct {
-		TickRateMs      int `json:"tick_rate_ms"`
-		MaxPlayers      int `json:"max_players_per_room"`
+		TickRateMs int `json:"tick_rate_ms"`
+		MaxPlayers int `json:"max_players_per_room"`
 	} `json:"server"`
 	Map struct {
 		Width       int     `json:"width"`
@@ -89,9 +92,11 @@ type GameConfig struct {
 		BaseViewRadius float64 `json:"base_view_radius"`
 	} `json:"gameplay"`
 	Phases struct {
-		Phase1 struct { Duration int `json:"duration_sec"` } `json:"phase_1_search"`
-		Phase2 struct { 
+		Phase1 struct {
 			Duration int `json:"duration_sec"`
+		} `json:"phase_1_search"`
+		Phase2 struct {
+			Duration         int `json:"duration_sec"`
 			MotorsSpawnCount int `json:"motors_spawn_count"`
 		} `json:"phase_2_conflict"`
 	} `json:"phases"`

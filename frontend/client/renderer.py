@@ -32,12 +32,26 @@ class Renderer:
         self.config_inputs = { "max_players": "6", "motors": "5", "p1_dur": "120", "p2_dur": "180" }
         self.config_active_idx = 0; self.config_keys = ["max_players", "motors", "p1_dur", "p2_dur"]
         self.show_settings = self.show_help = self.show_shop = self.dev_mode = self.spectator_mode = False
+        self.mouse_sensitivity = 1.0
+        self.look_angle = 0.0  # radians
+        self.fov_degrees = 90.0
+        self.fov_ray_count = 120
+        # Rendering policy:
+        # - Map tiles (including walls) are always rendered.
+        # - Fog keeps non-FOV area fully black.
+        # - Inside FOV wedge, map remains fully visible (not blocked by walls).
+        # - World entities are visible ONLY if inside wedge AND not blocked by walls.
+        self.fov_blocked_by_walls = False
+        self.hide_world_entities = False
         self.cam_offset = [0, 0]
         self.settings_rect = pygame.Rect(WINDOW_WIDTH//2 - 150, WINDOW_HEIGHT//2 - 150, 300, 300)
         self.help_rect = pygame.Rect(WINDOW_WIDTH//2 - 300, WINDOW_HEIGHT//2 - 250, 600, 500)
         self.shop_rect = pygame.Rect(WINDOW_WIDTH//2 - 200, WINDOW_HEIGHT//2 - 200, 400, 400)
         self.dev_mode_rect = pygame.Rect(WINDOW_WIDTH//2 - 120, WINDOW_HEIGHT//2 + 50, 240, 30)
         self.lang_rect = pygame.Rect(WINDOW_WIDTH//2 - 120, WINDOW_HEIGHT//2 + 90, 240, 30)
+        self.sens_minus_rect = pygame.Rect(WINDOW_WIDTH//2 - 120, WINDOW_HEIGHT//2 + 130, 40, 30)
+        self.sens_plus_rect = pygame.Rect(WINDOW_WIDTH//2 + 80, WINDOW_HEIGHT//2 + 130, 40, 30)
+        self.sens_value_rect = pygame.Rect(WINDOW_WIDTH//2 - 70, WINDOW_HEIGHT//2 + 130, 140, 30)
         self.back_btn_rect = pygame.Rect(WINDOW_WIDTH//2 - 60, WINDOW_HEIGHT//2 + 200, 120, 40)
         self.radar_rect = pygame.Rect(WINDOW_WIDTH - 160, WINDOW_HEIGHT - 160, 150, 150)
         self.pause_rects = {
@@ -55,6 +69,140 @@ class Renderer:
     def t(self, key): return i18n.t(key)
     def world_to_screen(self, wx, wy, cam_x, cam_y):
         return int((wx * GRID_SIZE) - cam_x + (WINDOW_WIDTH // 2)), int((wy * GRID_SIZE) - cam_y + (WINDOW_HEIGHT // 2))
+
+    def _wrap_angle(self, a):
+        # Normalize to [-pi, pi)
+        while a >= math.pi:
+            a -= 2*math.pi
+        while a < -math.pi:
+            a += 2*math.pi
+        return a
+
+    def update_look_from_mouse(self, mouse_pos, dt, state):
+        # Only update in active gameplay (not in dev/spectator overlays)
+        if self.state != "GAME":
+            return
+        if getattr(state, "is_extracted", False) and self.spectator_mode:
+            return
+        if self.show_shop or self.state == "PAUSE":
+            return
+
+        mx, my = mouse_pos
+        cx, cy = WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2
+        dx = mx - cx
+        dy = my - cy
+        if dx == 0 and dy == 0:
+            return
+
+        target = math.atan2(dy, dx)
+        diff = self._wrap_angle(target - self.look_angle)
+        # Sensitivity acts as response speed (higher -> faster snap)
+        alpha = max(0.0, min(1.0, dt * 12.0 * float(self.mouse_sensitivity)))
+        self.look_angle = self._wrap_angle(self.look_angle + diff * alpha)
+
+    def get_look_dir(self):
+        return (math.cos(self.look_angle), math.sin(self.look_angle))
+
+    def _raycast_to_wall(self, origin_w, dir_w, max_dist, tiles):
+        # Simple incremental raymarch in world space against wall tiles.
+        # Map is small (32x32), so this is fast enough and stable.
+        ox, oy = origin_w
+        dx, dy = dir_w
+        step = 0.12  # world units (~1/8 tile)
+        dist = 0.0
+        lastx, lasty = ox, oy
+        h = len(tiles)
+        w = len(tiles[0]) if h > 0 else 0
+        while dist <= max_dist:
+            x = ox + dx * dist
+            y = oy + dy * dist
+            gx = int(x)
+            gy = int(y)
+            if gx < 0 or gy < 0 or gx >= w or gy >= h:
+                return lastx, lasty
+            if tiles[gy][gx] == 1:
+                return lastx, lasty
+            lastx, lasty = x, y
+            dist += step
+        return lastx, lasty
+
+    def _has_line_of_sight(self, origin_w, target_w, tiles):
+        if not tiles:
+            return True
+        ox, oy = origin_w
+        tx, ty = target_w
+        dx = tx - ox
+        dy = ty - oy
+        dist = math.sqrt(dx*dx + dy*dy)
+        if dist <= 1e-6:
+            return True
+        inv = 1.0 / dist
+        ux, uy = dx * inv, dy * inv
+        step = 0.12
+        d = 0.0
+        h = len(tiles)
+        w = len(tiles[0]) if h > 0 else 0
+        while d <= dist:
+            x = ox + ux * d
+            y = oy + uy * d
+            gx = int(x)
+            gy = int(y)
+            if gx < 0 or gy < 0 or gx >= w or gy >= h:
+                return False
+            if tiles[gy][gx] == 1:
+                return False
+            d += step
+        return True
+
+    def _is_world_pos_visible(self, state, wx, wy):
+        # Visibility rule for entities/blips: within view radius, inside FOV wedge,
+        # and NOT occluded by walls.
+        ox, oy = state.my_pos[0], state.my_pos[1]
+        dx = wx - ox
+        dy = wy - oy
+        rr = float(state.view_radius)
+        if dx*dx + dy*dy > rr*rr:
+            return False
+        # Cone check
+        half = math.radians(self.fov_degrees) / 2.0
+        cos_half = math.cos(half)
+        ldx, ldy = self.get_look_dir()
+        dlen2 = dx*dx + dy*dy
+        if dlen2 <= 1e-9:
+            in_cone = True
+        else:
+            inv = 1.0 / math.sqrt(dlen2)
+            ux, uy = dx * inv, dy * inv
+            in_cone = (ux * ldx + uy * ldy) >= cos_half
+        if not in_cone:
+            return False
+        return self._has_line_of_sight((ox, oy), (wx, wy), state.map_tiles)
+
+    def _compute_fov_polygon_screen(self, state):
+        # Returns a list of screen points forming a polygon fan (center + ray endpoints)
+        cx, cy = WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2
+        half = math.radians(self.fov_degrees) / 2.0
+        rays = max(12, int(self.fov_ray_count))
+        pts = [(cx, cy)]
+
+        tiles = state.map_tiles
+        origin_w = (state.my_pos[0], state.my_pos[1])
+        max_dist = float(state.view_radius)
+
+        for i in range(rays):
+            t = 0.0 if rays == 1 else (i / (rays - 1))
+            ang = self.look_angle - half + (2.0 * half * t)
+            dir_w = (math.cos(ang), math.sin(ang))
+            if self.fov_blocked_by_walls and tiles:
+                ex, ey = self._raycast_to_wall(origin_w, dir_w, max_dist, tiles)
+                dist = math.sqrt((ex-origin_w[0])**2 + (ey-origin_w[1])**2)
+            else:
+                dist = max_dist
+            sx = int(cx + dir_w[0] * dist * GRID_SIZE)
+            sy = int(cy + dir_w[1] * dist * GRID_SIZE)
+            pts.append((sx, sy))
+
+        return pts
 
     def draw_game(self, state):
         if self.state == "CONNECT": self.draw_connect(); return
@@ -80,6 +228,10 @@ class Renderer:
                         pygame.draw.rect(self.screen, COLOR_WALL, rect); pygame.draw.rect(self.screen, COLOR_WALL_EDGE, rect, 1)
         half = GRID_SIZE // 2
         for ent in state.entities:
+            if self.hide_world_entities:
+                continue
+            if not self._is_world_pos_visible(state, ent["pos"]["x"], ent["pos"]["y"]):
+                continue
             sx, sy = self.world_to_screen(ent["pos"]["x"], ent["pos"]["y"], cam_x, cam_y)
             tl = (sx - half, sy - half)
             if ent["type"] == "ITEM_DROP":
@@ -102,13 +254,23 @@ class Renderer:
                 pygame.draw.rect(self.screen, COLOR_EXIT, (tl[0], tl[1], GRID_SIZE, GRID_SIZE), 0); self.draw_text_centered("E", sx, sy, (0, 0, 0))
         rd = GRID_SIZE // 4 
         for pid, p in state.players.items():
+            if self.hide_world_entities:
+                continue
+            if not self._is_world_pos_visible(state, p["pos"]["x"], p["pos"]["y"]):
+                continue
             sx, sy = self.world_to_screen(p["pos"]["x"], p["pos"]["y"], cam_x, cam_y)
             pygame.draw.circle(self.screen, COLOR_ENEMY, (sx, sy), rd); self.draw_hp_bar(sx-half, sy-half-5, p["hp"], p["max_hp"])
         if not getattr(state, "is_extracted", False):
             sx, sy = self.world_to_screen(state.my_pos[0], state.my_pos[1], cam_x, cam_y)
             pygame.draw.circle(self.screen, COLOR_SELF, (sx, sy), rd); self.draw_text_centered("ME", sx, sy-10); self.draw_hp_bar(sx-half, sy-half-5, state.my_hp, 100)
         if not self.dev_mode and not self.spectator_mode:
-            self.fog_surf.fill(COLOR_FOG); pygame.draw.circle(self.fog_surf, (0,0,0,0), (WINDOW_WIDTH//2, WINDOW_HEIGHT//2), int(state.view_radius * GRID_SIZE))
+            # Keep outside-FOV fully black; inside FOV wedge fully visible.
+            self.fog_surf.fill((0, 0, 0, 255))
+            poly = self._compute_fov_polygon_screen(state)
+            if len(poly) >= 3:
+                pygame.draw.polygon(self.fog_surf, (0, 0, 0, 0), poly)
+            else:
+                pygame.draw.circle(self.fog_surf, (0,0,0,0), (WINDOW_WIDTH//2, WINDOW_HEIGHT//2), int(state.view_radius * GRID_SIZE))
             self.screen.blit(self.fog_surf, (0,0))
         self.draw_hud(state); self.draw_inventory(state); self.draw_events(state); self.draw_minimap(state)
         if state.my_hp <= 0: self.draw_death_overlay()
@@ -185,12 +347,16 @@ class Renderer:
     def draw_minimap(self, state):
         pygame.draw.rect(self.screen, COLOR_RADAR_BG, self.radar_rect, border_radius=10); pygame.draw.rect(self.screen, COLOR_RADAR_BORDER, self.radar_rect, 2, border_radius=10)
         scale = 140.0 / 32.0; ox, oy = self.radar_rect.x + 5, self.radar_rect.y + 5
-        for blip in state.radar_blips:
-            bx, by = blip["pos"]["x"] * scale, blip["pos"]["y"] * scale
-            if blip["type"] == "MOTOR": pygame.draw.circle(self.screen, (255,255,0), (int(ox+bx), int(oy+by)), 3)
-            elif blip["type"] == "EXIT": pygame.draw.circle(self.screen, (0,255,0), (int(ox+bx), int(oy+by)), 4)
-            elif blip["type"] == "SUPPLY_DROP": pygame.draw.rect(self.screen, (255,0,255), (ox+bx-3, oy+by-3, 6, 6))
-            elif blip["type"] == "MERCHANT": pygame.draw.rect(self.screen, (255,215,0), (ox+bx-3, oy+by-3, 6, 6))
+        if not getattr(self, "hide_world_entities", False):
+            for blip in state.radar_blips:
+                bxw, byw = blip["pos"]["x"], blip["pos"]["y"]
+                if not self._is_world_pos_visible(state, bxw, byw):
+                    continue
+                bx, by = bxw * scale, byw * scale
+                if blip["type"] == "MOTOR": pygame.draw.circle(self.screen, (255,255,0), (int(ox+bx), int(oy+by)), 3)
+                elif blip["type"] == "EXIT": pygame.draw.circle(self.screen, (0,255,0), (int(ox+bx), int(oy+by)), 4)
+                elif blip["type"] == "SUPPLY_DROP": pygame.draw.rect(self.screen, (255,0,255), (ox+bx-3, oy+by-3, 6, 6))
+                elif blip["type"] == "MERCHANT": pygame.draw.rect(self.screen, (255,215,0), (ox+bx-3, oy+by-3, 6, 6))
         sx, sy = state.my_pos[0] * scale, state.my_pos[1] * scale; pygame.draw.circle(self.screen, COLOR_SELF, (int(ox+sx), int(oy+sy)), 3)
 
     def draw_bar(self, x, y, val, max_val, color):
@@ -235,6 +401,16 @@ class Renderer:
         self.screen.blit(self.hud_font.render(f"{self.t('LBL_DEV_MODE')}: {'ON' if self.dev_mode else 'OFF'}", True, (255,255,255)), (self.dev_mode_rect.x+10, self.dev_mode_rect.y+5))
         pygame.draw.rect(self.screen, (0,255,255), self.lang_rect, 2)
         self.screen.blit(self.hud_font.render(f"{self.t('LBL_LANG')}", True, (255,255,255)), (self.lang_rect.x+10, self.lang_rect.y+5))
+
+        # Mouse Sensitivity
+        pygame.draw.rect(self.screen, (0,255,255), self.sens_minus_rect, 2)
+        pygame.draw.rect(self.screen, (0,255,255), self.sens_plus_rect, 2)
+        pygame.draw.rect(self.screen, (0,255,255), self.sens_value_rect, 2)
+        self.screen.blit(self.hud_font.render("-", True, (255,255,255)), (self.sens_minus_rect.x+14, self.sens_minus_rect.y+5))
+        self.screen.blit(self.hud_font.render("+", True, (255,255,255)), (self.sens_plus_rect.x+14, self.sens_plus_rect.y+5))
+        sens_txt = f"{self.t('LBL_MOUSE_SENS')}: {self.mouse_sensitivity:.1f}"
+        self.screen.blit(self.hud_font.render(sens_txt, True, (255,255,255)), (self.sens_value_rect.x+10, self.sens_value_rect.y+5))
+
         pygame.draw.rect(self.screen, (200, 50, 50), self.back_btn_rect, border_radius=5); pygame.draw.rect(self.screen, (255, 255, 255), self.back_btn_rect, 2, border_radius=5)
         self.screen.blit(self.hud_font.render("BACK", True, (255,255,255)), (self.back_btn_rect.x+40, self.back_btn_rect.y+10))
 
@@ -286,6 +462,10 @@ class Renderer:
             if self.show_settings:
                 if self.dev_mode_rect.collidepoint(pos): self.dev_mode = not self.dev_mode; return True
                 if self.lang_rect.collidepoint(pos): i18n.set_lang("en" if i18n.lang == "zh" else "zh"); return True
+                if self.sens_minus_rect.collidepoint(pos):
+                    self.mouse_sensitivity = max(0.1, round(self.mouse_sensitivity - 0.1, 1)); return True
+                if self.sens_plus_rect.collidepoint(pos):
+                    self.mouse_sensitivity = min(5.0, round(self.mouse_sensitivity + 0.1, 1)); return True
                 if self.back_btn_rect.collidepoint(pos): self.show_settings = False; return True
             elif self.show_help:
                 if hasattr(self, 'help_back_rect') and self.help_back_rect.collidepoint(pos): self.show_help = False; return True
