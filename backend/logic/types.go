@@ -99,8 +99,10 @@ type Item struct {
 
 type GameConfig struct {
 	Server struct {
-		TickRateMs int `json:"tick_rate_ms"`
-		MaxPlayers int `json:"max_players_per_room"`
+		TickRateMs               int  `json:"tick_rate_ms"`
+		MaxPlayers               int  `json:"max_players_per_room"`
+		WaitForPlayersTimeoutSec int  `json:"wait_for_players_timeout_sec"`
+		DebugLogColor            bool `json:"debug_log_color"`
 	} `json:"server"`
 	Map struct {
 		Width       int     `json:"width"`
@@ -109,12 +111,16 @@ type GameConfig struct {
 		WallDensity float64 `json:"wall_density"`
 	} `json:"map"`
 	Gameplay struct {
-		InventorySize  int     `json:"inventory_size"`
-		BaseMoveSpeed  float64 `json:"base_move_speed"`
-		BaseViewRadius float64 `json:"base_view_radius"`
-		HearRadius     float64 `json:"hear_radius"`
-		BaseMaxHP      float64 `json:"base_max_hp"`
-		BaseMaxWeight  float64 `json:"base_max_weight"`
+		InventorySize              int     `json:"inventory_size"`
+		SafeSlotCount              int     `json:"safe_slot_count"`
+		BaseMoveSpeed              float64 `json:"base_move_speed"`
+		BaseViewRadius             float64 `json:"base_view_radius"`
+		HearRadius                 float64 `json:"hear_radius"`
+		BaseMaxHP                  float64 `json:"base_max_hp"`
+		BaseMaxWeight              float64 `json:"base_max_weight"`
+		WeightThresholdNoiseDouble float64 `json:"weight_threshold_noise_double"`
+		WeightThresholdViewReduce  float64 `json:"weight_threshold_view_reduce"`
+		WeightThresholdImmobilize  float64 `json:"weight_threshold_immobilize"`
 	} `json:"gameplay"`
 	Items struct {
 		InitialWorldItemCount int     `json:"initial_world_item_count"`
@@ -179,13 +185,26 @@ type GameConfig struct {
 			ReconEffectMult  float64 `json:"recon_effect_mult"`
 		} `json:"TRAP"`
 	} `json:"tactics"`
+	Combat struct {
+		BaseAttackDamage         float64 `json:"base_attack_damage"`
+		AdvancedReconDurationSec float64 `json:"advanced_recon_duration_sec"`
+		AttackRequiresVision     bool    `json:"attack_requires_vision"`
+	} `json:"combat"`
 	Phases struct {
 		Phase1 struct {
 			Duration int `json:"duration_sec"`
 		} `json:"phase_1_search"`
 		Phase2 struct {
-			Duration         int `json:"duration_sec"`
-			MotorsSpawnCount int `json:"motors_spawn_count"`
+			Duration                 int `json:"duration_sec"`
+			MotorsSpawnCount         int `json:"motors_spawn_count"`
+			MotorsRequiredToOpenExit int `json:"motors_required_to_open_exit"`
+			MotorDecipherTimeSec     int `json:"motor_decipher_time_sec"`
 		} `json:"phase_2_conflict"`
+		Phase3 struct {
+			ExtractionSlotsTotal      int     `json:"extraction_slots_total"`
+			ExtractionCooldownSec     int     `json:"extraction_cooldown_sec"`
+			GlobalPulseIntervalSec    int     `json:"global_pulse_interval_sec"`
+			ViewRadiusDecayRatePerSec float64 `json:"view_radius_decay_rate_per_sec"`
+		} `json:"phase_3_escape"`
 	} `json:"phases"`
 }

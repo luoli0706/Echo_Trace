@@ -1,51 +1,52 @@
-# Echo Trace Development Plan | 开发计划
+# Echo Trace 开发计划（与当前代码一致）
 
-> **Status:** Sprint 4 重构与优化中 (Optimization & Refactoring)
-> **Objective:** 实现 docs/p0_recommendations.md 中的关键架构升级。
+> 目标：围绕“信息对抗 + 经济循环 + 可配置”的可玩版本，持续收敛体验与一致性。
 
-## 🚨 P0: Critical Architecture Decoupling | 关键架构解耦 (Current Focus)
+---
 
-- [x] **Refactor GameLoop | 重构游戏循环**
-    - [x] Create `logic/loop.go` with `GameLoop` struct.
-    - [x] Implement `Run()` with Ticker and Channel handling.
-    - [x] Decouple `Room` from direct ticking.
-- [x] **Actor Model for Input | 演员模型输入处理**
-    - [x] Define `PlayerInput` struct.
-    - [x] Replace direct method calls in `client.go` with `GameLoop.InputChan`.
-- [x] **Snapshot Broadcasting | 快照广播**
-    - [x] Implement `SnapshotChan` in `GameLoop`.
-    - [x] Update `Room` to listen and broadcast snapshots.
+## ✅ 已完成（关键能力）
 
-## 🚨 P0: Physics Engine Upgrade | 物理引擎升级
+- [x] 90° 扇形视野 + 墙体 LOS 遮挡（服务端 AOI 过滤 + 客户端 Fog 渲染）
+- [x] 鼠标控制面向、灵敏度设置
+- [x] 道具体系按 Items.md 对齐（类别/阶段权重/战术倾向影响）
+- [x] 负重影响移速（按重量比例惩罚）
+- [x] 商人系统：
+    - [x] `shop_stock` 由服务端生成并下发
+    - [x] 每阶段每玩家 1 次免费刷新，后续付费（可配置）
+    - [x] 每阶段固定位置，进入下一阶段换点
+    - [x] 键位：1-6 买 / Ctrl+1-6 卖 / R 刷新
+- [x] 道具手册：
+    - [x] 文档（Items.md）补充“图标缩写 + 使用说明”
+    - [x] 客户端 ESC 菜单内入口 + 路由回退 + 鼠标滚轮滚动
+- [x] “被动道具”全部改为“使用后持续一段时间”的限时 Buff（服务端权威、到期自动回退）
 
-- [x] **New Collision System | 新碰撞系统**
-    - [x] Create `logic/physics.go`.
-    - [x] Implement `CircleAABB` collision detection.
-    - [x] Implement `ResolveMovement` with sliding vectors.
-- [x] **Integrate Physics | 集成物理**
-    - [x] Replace `UpdateTick` movement logic.
-    - [x] Remove old `isWalkableWithRadius`.
+---
 
-## 🚨 P1: Protocol Optimization (Protobuf) | 协议优化
+## 🔥 P0（下一步必须做：体验/一致性/可维护）
 
-- [ ] **Define Schema | 定义 Schema**
-    - [ ] Create `.proto` files for `InputEvent` and `StateSnapshot`.
-- [ ] **Generate Code | 生成代码**
-    - [ ] Setup `protoc` workflow.
-- [ ] **Migrate Network | 迁移网络层**
-    - [ ] Update `client.go` to use binary messages.
-    - [ ] Update frontend to parse Protobuf.
+- [ ] **更新协议文档**：`protocol.json` 已明显落后于代码（缺少 2007/2008/2009 等；字段也不一致）
+- [ ] **房间系统完善**：房间列表（可刷新/可点击加入）、创建房间必须填写且房间名全局唯一；每个房间持有独立的 `GameConfig` 副本；客户端创建房间用“完整 game_config 表格”逐项配置
+- [ ] **商店价格显示**：客户端商店列表展示每个商品价格（与服务端定价一致）
+- [ ] **阶段/配置一致性清理**：
+    - [ ] `game_config.json` 中存在未实现字段（撤离名额、视野衰减、部分负重阈值）
+    - [ ] 选择：要么实现，要么在配置里标注“尚未接入”并从文档里移除承诺
+- [ ] **冲突阶段计时策略**：当前 Phase2 逻辑更接近“直到修够电机再进 Phase3”，与配置的 duration 有偏差（确认并统一）
 
-## 📅 Sprint 3: Economy & Loop (Completed Items)
+---
 
-- [x] High-Value Supply Drops (Logic & Radar).
-- [x] Process Extraction (Funds Settlement).
-- [x] SQLite Persistence.
-- [x] Shop System & UI.
-- [x] Developer Mode.
-- [x] Player Name Input.
+## 🧩 P1（玩法增强：逐步完善道具与信息战）
 
-## 📅 Sprint 4 Remaining Tasks
+- [ ] **复杂侦察道具真实机制**（替换“加视距”的简化实现）
+    - [ ] 心跳/无人机/全图扫描：输出红点/标记体系（只在扇形内？是否穿墙？）
+    - [ ] 透视：轮廓/短暂穿墙信息（需明确反作弊边界）
+- [ ] **噪音系统扩展**：更多声音类型、权重、与负重/冲刺联动
+- [ ] **经济平衡**：拾取奖励、商人定价、刷新成本与道具强度的整体闭环
 
-1.  **Verify Stability:** Run stress tests on new GameLoop.
-2.  **Protobuf Migration:** Start defining `.proto` files.
+---
+
+## 🧪 P2（工程质量）
+
+- [ ] 端到端冒烟脚本（启动服务端 + 启动客户端 + 关键操作自测）
+- [ ] 关键逻辑单元测试：道具效果、商人刷新规则、AOI 可见性边界
+- [ ] 日志与调试开关分层（减少默认噪音）
+

@@ -1,5 +1,5 @@
 import pygame
-import math, time, os
+import math, time, os, json
 from datetime import datetime
 from client.config import *
 from client.i18n import i18n
@@ -30,8 +30,27 @@ class Renderer:
         self.font = get_cjk_font(FONT_SIZE); self.hud_font = get_cjk_font(16); self.time_font = pygame.font.SysFont("consolas", 24)
         self.fog_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
         self.state = "CONNECT"; self.server_input = "ws://localhost:8080/ws"; self.name_input = "Agent_07"
-        self.config_inputs = { "max_players": "6", "motors": "5", "p1_dur": "120", "p2_dur": "180" }
-        self.config_active_idx = 0; self.config_keys = ["max_players", "motors", "p1_dur", "p2_dur"]
+        self.menu_message = ""
+        # Room list state
+        self.rooms = []
+        self.room_list_selected = 0
+        self.room_list_scroll = 0
+        self.room_list_row_rects = []
+        self.room_list_refresh_rect = None
+        self.room_list_back_rect = None
+
+        # Create-room config editor state
+        self.room_name_input = ""
+        self.config_data = None
+        self.config_rows = []
+        self.config_selected = 0
+        self.config_scroll = 0
+        self.config_focus = "room_name"  # room_name | table
+        self.config_editing = False
+        self.config_edit_buffer = ""
+        self.config_row_rects = []
+        self.config_create_rect = None
+        self.config_back_rect = None
         self.show_shop = self.dev_mode = self.spectator_mode = False
         # Pause UI routing stack: ["root" -> "settings"/"help"/"item_manual"].
         self.pause_route = []
@@ -73,6 +92,109 @@ class Renderer:
         }
         self.menu_rects = {}; self.pulse_start_time = 0
 
+    def _deep_copy(self, obj):
+        try:
+            return json.loads(json.dumps(obj))
+        except Exception:
+            return obj
+
+    def _load_default_config_template(self):
+        # Prefer running from repo root (Echo_Trace) where game_config.json lives.
+        candidates = [
+            os.path.join("game_config.json"),
+            os.path.join("..", "game_config.json"),
+            os.path.join("frontend", "..", "game_config.json"),
+        ]
+        for p in candidates:
+            try:
+                if os.path.exists(p):
+                    with open(p, "r", encoding="utf-8") as f:
+                        return json.load(f)
+            except Exception:
+                pass
+        return {}
+
+    def _flatten_config(self, obj, prefix=""):
+        rows = []
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                path = f"{prefix}.{k}" if prefix else str(k)
+                # Skip containers; leaf-only rows.
+                if isinstance(v, (dict, list)):
+                    rows.extend(self._flatten_config(v, path))
+                else:
+                    editable = True
+                    if str(k).startswith("_comment"):
+                        editable = False
+                    rows.append({
+                        "path": path,
+                        "value": v,
+                        "type": type(v),
+                        "editable": editable,
+                    })
+        elif isinstance(obj, list):
+            for i, v in enumerate(obj):
+                path = f"{prefix}[{i}]" if prefix else f"[{i}]"
+                if isinstance(v, (dict, list)):
+                    rows.extend(self._flatten_config(v, path))
+                else:
+                    rows.append({
+                        "path": path,
+                        "value": v,
+                        "type": type(v),
+                        "editable": True,
+                    })
+        return rows
+
+    def _set_by_path(self, root, path, value):
+        # Supports dot paths and list indices like a.b[0].c
+        cur = root
+        i = 0
+        token = ""
+        tokens = []
+        while i < len(path):
+            ch = path[i]
+            if ch == '.':
+                if token:
+                    tokens.append(token)
+                    token = ""
+                i += 1
+                continue
+            if ch == '[':
+                if token:
+                    tokens.append(token)
+                    token = ""
+                j = path.find(']', i)
+                if j == -1:
+                    break
+                idx_s = path[i+1:j]
+                try:
+                    tokens.append(int(idx_s))
+                except Exception:
+                    tokens.append(idx_s)
+                i = j + 1
+                continue
+            token += ch
+            i += 1
+        if token:
+            tokens.append(token)
+
+        for t in tokens[:-1]:
+            cur = cur[t]
+        cur[tokens[-1]] = value
+
+    def enter_config_editor(self):
+        self.menu_message = ""
+        self.room_name_input = ""
+        self.config_focus = "room_name"
+        self.config_editing = False
+        self.config_edit_buffer = ""
+        tmpl = self._load_default_config_template()
+        self.config_data = self._deep_copy(tmpl)
+        self.config_rows = self._flatten_config(self.config_data)
+        self.config_selected = 0
+        self.config_scroll = 0
+
     def pause_open(self):
         if not self.pause_route:
             self.pause_route = ["root"]
@@ -98,6 +220,23 @@ class Renderer:
     def t(self, key): return i18n.t(key)
     def world_to_screen(self, wx, wy, cam_x, cam_y):
         return int((wx * GRID_SIZE) - cam_x + (WINDOW_WIDTH // 2)), int((wy * GRID_SIZE) - cam_y + (WINDOW_HEIGHT // 2))
+
+    def _phase_label(self, phase: int):
+        try:
+            phase = int(phase)
+        except Exception:
+            return "?"
+        if phase == 0:
+            return self.t("PHASE_INIT")
+        if phase == 1:
+            return self.t("PHASE_SEARCH")
+        if phase == 2:
+            return self.t("PHASE_CONFLICT")
+        if phase == 3:
+            return self.t("PHASE_ESCAPE")
+        if phase == 4:
+            return self.t("PHASE_ENDED")
+        return str(phase)
 
     def _wrap_angle(self, a):
         # Normalize to [-pi, pi)
@@ -238,6 +377,7 @@ class Renderer:
         if self.state == "LOGIN": self.draw_login(); return
         if self.state == "MENU": self.draw_menu(); return
         if self.state == "CONFIG": self.draw_config(); return
+        if self.state == "ROOM_LIST": self.draw_room_list(); return
         self.screen.fill(COLOR_BG)
         if state.phase == 0 and self.state != "PAUSE": self.draw_lobby(state); return
         if getattr(state, "is_extracted", False) and self.spectator_mode:
@@ -334,6 +474,9 @@ class Renderer:
     def draw_menu(self):
         self.screen.fill(COLOR_BG); t = self.font.render(self.t("MENU_TITLE"), True, (0, 255, 255))
         self.screen.blit(t, t.get_rect(center=(WINDOW_WIDTH//2, 100)))
+        if self.menu_message:
+            msg = self.hud_font.render(self.menu_message, True, (255, 120, 120))
+            self.screen.blit(msg, msg.get_rect(center=(WINDOW_WIDTH//2, 150)))
         c_r = pygame.Rect(WINDOW_WIDTH//2 - 150, 250, 300, 50); j_r = pygame.Rect(WINDOW_WIDTH//2 - 150, 330, 300, 50)
         for r, txt in [(c_r, self.t("BTN_CREATE")), (j_r, self.t("BTN_JOIN"))]:
             pygame.draw.rect(self.screen, COLOR_BTN, r); pygame.draw.rect(self.screen, (0, 255, 255), r, 2)
@@ -343,17 +486,145 @@ class Renderer:
         self.screen.blit(self.hud_font.render("BACK [B]", True, (255,255,255)), (br.x+25, br.y+10)); self.menu_back_rect = br
 
     def draw_config(self):
-        self.screen.fill(COLOR_BG); t = self.font.render(self.t("CONFIG_TITLE"), True, (0, 255, 255))
-        self.screen.blit(t, t.get_rect(center=(WINDOW_WIDTH//2, 50)))
-        y = 150; labels = {"max_players": self.t("LBL_MAX_AGENTS"), "motors": self.t("LBL_MOTORS"), "p1_dur": self.t("LBL_SEARCH"), "p2_dur": self.t("LBL_CONFLICT")}
-        for i, key in enumerate(self.config_keys):
-            color = (255, 255, 0) if i == self.config_active_idx else (200, 200, 200)
-            txt = f"{labels[key]} {self.config_inputs[key]}"
-            if i == self.config_active_idx: txt += "|"
-            self.screen.blit(self.font.render(txt, True, color), (WINDOW_WIDTH//2 - 150, y)); y += 50
-        self.screen.blit(self.hud_font.render(self.t("CONFIG_HINT"), True, (150, 150, 150)), (WINDOW_WIDTH//2 - 200, 500))
-        br = pygame.Rect(WINDOW_WIDTH//2 - 60, 550, 120, 40); pygame.draw.rect(self.screen, (200, 50, 50), br, border_radius=5); pygame.draw.rect(self.screen, (255, 255, 255), br, 2, border_radius=5)
-        self.screen.blit(self.hud_font.render("BACK [B]", True, (255,255,255)), (br.x+25, br.y+10)); self.config_back_rect = br
+        self.screen.fill(COLOR_BG)
+        t = self.font.render(self.t("CONFIG_TITLE"), True, (0, 255, 255))
+        self.screen.blit(t, t.get_rect(center=(WINDOW_WIDTH//2, 40)))
+        if self.menu_message:
+            msg = self.hud_font.render(self.menu_message, True, (255, 120, 120))
+            self.screen.blit(msg, msg.get_rect(center=(WINDOW_WIDTH//2, 75)))
+
+        # Room name input
+        rn_label = self.hud_font.render(self.t("LBL_ROOM_NAME"), True, (200, 200, 200))
+        self.screen.blit(rn_label, (60, 95))
+        rn_rect = pygame.Rect(180, 88, WINDOW_WIDTH - 240, 34)
+        pygame.draw.rect(self.screen, (50, 50, 60), rn_rect)
+        pygame.draw.rect(self.screen, (0, 255, 255) if self.config_focus == "room_name" else (120, 120, 140), rn_rect, 2)
+        rn_txt = self.room_name_input
+        if self.config_focus == "room_name":
+            rn_txt += "|"
+        self.screen.blit(self.hud_font.render(rn_txt, True, (255, 255, 255)), (rn_rect.x + 8, rn_rect.y + 8))
+
+        # Table header
+        table_rect = pygame.Rect(50, 140, WINDOW_WIDTH - 100, 380)
+        pygame.draw.rect(self.screen, (35, 35, 45), table_rect)
+        pygame.draw.rect(self.screen, (0, 255, 255), table_rect, 1)
+        self.screen.blit(self.hud_font.render("KEY", True, (0, 255, 255)), (table_rect.x + 10, table_rect.y + 8))
+        self.screen.blit(self.hud_font.render("VALUE", True, (0, 255, 255)), (table_rect.x + table_rect.w//2 + 10, table_rect.y + 8))
+
+        # Rows
+        row_h = 22
+        visible = max(1, (table_rect.h - 40) // row_h)
+        start = max(0, int(self.config_scroll))
+        end = min(len(self.config_rows), start + visible)
+        self.config_row_rects = []
+        y = table_rect.y + 34
+        for idx in range(start, end):
+            r = pygame.Rect(table_rect.x + 6, y, table_rect.w - 12, row_h)
+            self.config_row_rects.append((idx, r))
+            is_sel = (idx == self.config_selected and self.config_focus == "table")
+            if is_sel:
+                pygame.draw.rect(self.screen, (70, 70, 95), r)
+            key_color = (200, 200, 200)
+            if not self.config_rows[idx].get("editable", True):
+                key_color = (140, 140, 140)
+            key_s = self.hud_font.render(self.config_rows[idx]["path"], True, key_color)
+            self.screen.blit(key_s, (r.x + 6, r.y + 2))
+
+            val = self.config_rows[idx]["value"]
+            if self.config_editing and idx == self.config_selected and self.config_focus == "table":
+                val_s = self.config_edit_buffer + "|"
+                val_color = (255, 255, 0)
+            else:
+                val_s = str(val)
+                val_color = (255, 255, 255) if self.config_rows[idx].get("editable", True) else (160, 160, 160)
+            vs = self.hud_font.render(val_s, True, val_color)
+            self.screen.blit(vs, (r.x + r.w//2, r.y + 2))
+            y += row_h
+
+        # Buttons
+        cr = pygame.Rect(WINDOW_WIDTH//2 - 160, 535, 170, 44)
+        br = pygame.Rect(WINDOW_WIDTH//2 + 10, 535, 150, 44)
+        pygame.draw.rect(self.screen, COLOR_BTN, cr, border_radius=6)
+        pygame.draw.rect(self.screen, (0, 255, 255), cr, 2, border_radius=6)
+        pygame.draw.rect(self.screen, (200, 50, 50), br, border_radius=6)
+        pygame.draw.rect(self.screen, (255, 255, 255), br, 2, border_radius=6)
+        self.screen.blit(self.hud_font.render(self.t("BTN_CREATE_ROOM"), True, (255,255,255)), (cr.x + 20, cr.y + 12))
+        self.screen.blit(self.hud_font.render(self.t("BTN_BACK"), True, (255,255,255)), (br.x + 45, br.y + 12))
+        self.config_create_rect = cr
+        self.config_back_rect = br
+
+        hint = self.hud_font.render(self.t("CONFIG_TABLE_HINT"), True, (150, 150, 150))
+        self.screen.blit(hint, (60, 590))
+
+    def draw_room_list(self):
+        self.screen.fill(COLOR_BG)
+        t = self.font.render(self.t("ROOM_LIST_TITLE"), True, (0, 255, 255))
+        self.screen.blit(t, t.get_rect(center=(WINDOW_WIDTH//2, 60)))
+        if self.menu_message:
+            msg = self.hud_font.render(self.menu_message, True, (255, 120, 120))
+            self.screen.blit(msg, msg.get_rect(center=(WINDOW_WIDTH//2, 100)))
+
+        table = pygame.Rect(60, 130, WINDOW_WIDTH - 120, 370)
+        pygame.draw.rect(self.screen, (35, 35, 45), table)
+        pygame.draw.rect(self.screen, (0, 255, 255), table, 1)
+        # Columns: name | phase | players | map
+        self.screen.blit(self.hud_font.render(self.t("COL_ROOM"), True, (0, 255, 255)), (table.x + 10, table.y + 8))
+        self.screen.blit(self.hud_font.render(self.t("COL_PHASE"), True, (0, 255, 255)), (table.x + int(table.w * 0.52), table.y + 8))
+        self.screen.blit(self.hud_font.render(self.t("COL_PLAYERS"), True, (0, 255, 255)), (table.x + int(table.w * 0.72), table.y + 8))
+        self.screen.blit(self.hud_font.render(self.t("COL_MAP"), True, (0, 255, 255)), (table.x + int(table.w * 0.87), table.y + 8))
+
+        row_h = 28
+        visible = max(1, (table.h - 40) // row_h)
+        start = max(0, int(self.room_list_scroll))
+        end = min(len(self.rooms), start + visible)
+        self.room_list_row_rects = []
+        y = table.y + 34
+        for idx in range(start, end):
+            r = pygame.Rect(table.x + 6, y, table.w - 12, row_h)
+            self.room_list_row_rects.append((idx, r))
+            if idx == self.room_list_selected:
+                pygame.draw.rect(self.screen, (70, 70, 95), r)
+            room = self.rooms[idx] if idx < len(self.rooms) else {}
+            name = str(room.get("room_name", ""))
+            rid = str(room.get("room_id", ""))
+            players = int(room.get("players", 0) or 0)
+            maxp = int(room.get("max_players", 0) or 0)
+            phase = room.get("phase", -1)
+            map_w = int(room.get("map_width", 0) or 0)
+            map_h = int(room.get("map_height", 0) or 0)
+
+            col1_x = r.x + 6
+            col2_x = r.x + int(r.w * 0.52)
+            col3_x = r.x + int(r.w * 0.72)
+            col4_x = r.x + int(r.w * 0.87)
+
+            left = f"{name}" if name else f"{rid}"
+            phase_s = self._phase_label(phase)
+            players_s = f"{players}/{maxp}" if maxp else f"{players}"
+            map_s = f"{map_w}x{map_h}" if map_w and map_h else "-"
+
+            self.screen.blit(self.hud_font.render(left, True, (255, 255, 255)), (col1_x, r.y + 5))
+            self.screen.blit(self.hud_font.render(phase_s, True, (200, 200, 200)), (col2_x, r.y + 5))
+            self.screen.blit(self.hud_font.render(players_s, True, (200, 200, 200)), (col3_x, r.y + 5))
+            self.screen.blit(self.hud_font.render(map_s, True, (200, 200, 200)), (col4_x, r.y + 5))
+            # show id small if name empty
+            if not name and rid:
+                pass
+            y += row_h
+
+        rr = pygame.Rect(WINDOW_WIDTH//2 - 180, 525, 160, 44)
+        br = pygame.Rect(WINDOW_WIDTH//2 - 10, 525, 160, 44)
+        pygame.draw.rect(self.screen, COLOR_BTN, rr, border_radius=6)
+        pygame.draw.rect(self.screen, (0, 255, 255), rr, 2, border_radius=6)
+        pygame.draw.rect(self.screen, (200, 50, 50), br, border_radius=6)
+        pygame.draw.rect(self.screen, (255, 255, 255), br, 2, border_radius=6)
+        self.screen.blit(self.hud_font.render(self.t("BTN_REFRESH"), True, (255,255,255)), (rr.x + 45, rr.y + 12))
+        self.screen.blit(self.hud_font.render(self.t("BTN_BACK"), True, (255,255,255)), (br.x + 55, br.y + 12))
+        self.room_list_refresh_rect = rr
+        self.room_list_back_rect = br
+
+        hint = self.hud_font.render(self.t("ROOM_LIST_HINT"), True, (150, 150, 150))
+        self.screen.blit(hint, (60, 585))
 
     def draw_pause_menu(self):
         overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA); overlay.fill((0, 0, 0, 180)); self.screen.blit(overlay, (0,0))

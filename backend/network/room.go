@@ -9,6 +9,7 @@ import (
 
 type Room struct {
 	ID         string
+	Name       string
 	Clients    map[*Client]bool
 	Broadcast  chan []byte
 	Register   chan *Client
@@ -18,9 +19,10 @@ type Room struct {
 	Mutex      sync.RWMutex
 }
 
-func NewRoom(id string, cfg *logic.GameConfig) *Room {
+func NewRoom(id string, name string, cfg *logic.GameConfig) *Room {
 	r := &Room{
 		ID:         id,
+		Name:       name,
 		Clients:    make(map[*Client]bool),
 		Broadcast:  make(chan []byte),
 		Register:   make(chan *Client),
@@ -35,7 +37,7 @@ func (r *Room) Run() {
 	// Start Game Loop
 	go r.GameLoop.Run()
 	log.Printf("Room %s started. Tick: %dms", r.ID, r.Config.Server.TickRateMs)
-	
+
 	lastPhase := logic.PhaseInit
 
 	for {
@@ -56,7 +58,7 @@ func (r *Room) Run() {
 				},
 			}
 			client.SendJSON(loginMsg)
-			
+
 			// IF Game already started, send Map info immediately
 			if r.GameLoop.GameState.Phase >= logic.PhaseSearch {
 				startMsg := map[string]interface{}{
@@ -92,7 +94,7 @@ func (r *Room) Run() {
 					}
 				}
 			}
-			
+
 			if currentPhase != -1 {
 				if lastPhase == logic.PhaseInit && currentPhase == logic.PhaseSearch {
 					log.Println("Game Started! Sending Map Info...")
@@ -125,7 +127,7 @@ func (r *Room) Run() {
 						"type":    3002,
 						"payload": snap,
 					}
-					
+
 					select {
 					case client.Send <- toJSON(msg):
 					default:

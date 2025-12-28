@@ -64,26 +64,185 @@ def main():
             if renderer.state == "MENU":
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if renderer.menu_rects.get("create").collidepoint(event.pos):
+                        renderer.enter_config_editor()
                         renderer.state = "CONFIG"
                     elif renderer.menu_rects.get("join").collidepoint(event.pos):
-                        if net: net.send({"type": 1011, "payload": {}})
+                        renderer.menu_message = ""
+                        if net:
+                            net.send({"type": 1013, "payload": {}})
+                            renderer.state = "ROOM_LIST"
+                continue
+
+            # --- State: ROOM_LIST ---
+            if renderer.state == "ROOM_LIST":
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        renderer.state = "MENU"
+                    elif event.key == pygame.K_r:
+                        if net: net.send({"type": 1013, "payload": {}})
+                    elif event.key == pygame.K_UP:
+                        renderer.room_list_selected = max(0, renderer.room_list_selected - 1)
+                        if renderer.room_list_selected < renderer.room_list_scroll:
+                            renderer.room_list_scroll = max(0, renderer.room_list_selected)
+                    elif event.key == pygame.K_DOWN:
+                        renderer.room_list_selected = min(max(0, len(renderer.rooms) - 1), renderer.room_list_selected + 1)
+                        visible = 10
+                        if renderer.room_list_selected >= renderer.room_list_scroll + visible:
+                            renderer.room_list_scroll = max(0, renderer.room_list_selected - visible + 1)
+                    elif event.key == pygame.K_RETURN:
+                        if renderer.rooms and renderer.room_list_selected < len(renderer.rooms):
+                            rid = renderer.rooms[renderer.room_list_selected].get("room_id")
+                            if rid and net:
+                                net.send({"type": 1011, "payload": {"room_id": rid}})
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    if renderer.room_list_refresh_rect and renderer.room_list_refresh_rect.collidepoint(event.pos):
+                        if net: net.send({"type": 1013, "payload": {}})
+                        continue
+                    if renderer.room_list_back_rect and renderer.room_list_back_rect.collidepoint(event.pos):
+                        renderer.state = "MENU"
+                        continue
+                    for idx, rect in getattr(renderer, "room_list_row_rects", []):
+                        if rect.collidepoint(event.pos):
+                            renderer.room_list_selected = idx
+                            # double click / click-to-join convenience
+                            if net and idx < len(renderer.rooms):
+                                rid = renderer.rooms[idx].get("room_id")
+                                if rid:
+                                    net.send({"type": 1011, "payload": {"room_id": rid}})
+                            break
+                    # Mouse wheel (older pygame)
+                    if event.button in (4, 5):
+                        renderer.room_list_scroll = max(0, renderer.room_list_scroll + (-1 if event.button == 4 else 1))
+                elif event.type == pygame.MOUSEWHEEL:
+                    renderer.room_list_scroll = max(0, renderer.room_list_scroll - event.y)
                 continue
 
             # --- State: CONFIG ---
             if renderer.state == "CONFIG":
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    if renderer.config_create_rect and renderer.config_create_rect.collidepoint(event.pos):
+                        rn = renderer.room_name_input.strip()
+                        if not rn:
+                            renderer.menu_message = "必须填写房间名。"
+                        else:
+                            renderer.menu_message = ""
+                            if net:
+                                net.send({"type": 1010, "payload": {"room_name": rn, "config": renderer.config_data}})
+                        continue
+                    if renderer.config_back_rect and renderer.config_back_rect.collidepoint(event.pos):
+                        renderer.state = "MENU"
+                        continue
+
+                    # Select row
+                    for idx, rect in getattr(renderer, "config_row_rects", []):
+                        if rect.collidepoint(event.pos):
+                            renderer.config_focus = "table"
+                            renderer.config_selected = idx
+                            renderer.config_editing = False
+                            renderer.config_edit_buffer = ""
+                            break
+
+                    # Mouse wheel (older pygame)
+                    if event.button in (4, 5):
+                        renderer.config_scroll = max(0, renderer.config_scroll + (-1 if event.button == 4 else 1))
+                    continue
+
+                if event.type == pygame.MOUSEWHEEL:
+                    renderer.config_scroll = max(0, renderer.config_scroll - event.y)
+                    continue
+
                 if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_UP: renderer.config_active_idx = (renderer.config_active_idx - 1) % len(renderer.config_keys)
-                    elif event.key == pygame.K_DOWN: renderer.config_active_idx = (renderer.config_active_idx + 1) % len(renderer.config_keys)
-                    elif event.key == pygame.K_RETURN:
-                        # Deploy
-                        payload = {k: float(v) for k, v in renderer.config_inputs.items()}
-                        if net: net.send({"type": 1010, "payload": payload})
-                    elif event.key == pygame.K_BACKSPACE:
-                        key = renderer.config_keys[renderer.config_active_idx]
-                        renderer.config_inputs[key] = renderer.config_inputs[key][:-1]
-                    else:
-                        key = renderer.config_keys[renderer.config_active_idx]
-                        renderer.config_inputs[key] += event.unicode
+                    if event.key == pygame.K_ESCAPE:
+                        renderer.state = "MENU"
+                        continue
+
+                    if event.key == pygame.K_TAB:
+                        renderer.config_focus = "table" if renderer.config_focus == "room_name" else "room_name"
+                        renderer.config_editing = False
+                        renderer.config_edit_buffer = ""
+                        continue
+
+                    # Focus: room name
+                    if renderer.config_focus == "room_name":
+                        if event.key == pygame.K_RETURN:
+                            renderer.config_focus = "table"
+                        elif event.key == pygame.K_BACKSPACE:
+                            renderer.room_name_input = renderer.room_name_input[:-1]
+                        else:
+                            renderer.room_name_input += event.unicode
+                        continue
+
+                    # Focus: table
+                    if renderer.config_focus == "table":
+                        if event.key == pygame.K_UP:
+                            renderer.config_selected = max(0, renderer.config_selected - 1)
+                            if renderer.config_selected < renderer.config_scroll:
+                                renderer.config_scroll = max(0, renderer.config_selected)
+                            renderer.config_editing = False
+                        elif event.key == pygame.K_DOWN:
+                            renderer.config_selected = min(max(0, len(renderer.config_rows) - 1), renderer.config_selected + 1)
+                            visible = 16
+                            if renderer.config_selected >= renderer.config_scroll + visible:
+                                renderer.config_scroll = max(0, renderer.config_selected - visible + 1)
+                            renderer.config_editing = False
+                        elif event.key == pygame.K_SPACE:
+                            # Toggle bool
+                            if renderer.config_rows and renderer.config_selected < len(renderer.config_rows):
+                                row = renderer.config_rows[renderer.config_selected]
+                                if row.get("editable", True) and isinstance(row.get("value"), bool):
+                                    v = not bool(row.get("value"))
+                                    row["value"] = v
+                                    try:
+                                        renderer._set_by_path(renderer.config_data, row["path"], v)
+                                    except Exception:
+                                        pass
+                        elif event.key == pygame.K_RETURN:
+                            mods = pygame.key.get_mods()
+                            if (mods & pygame.KMOD_CTRL) or (mods & pygame.KMOD_LCTRL):
+                                # Create room
+                                rn = renderer.room_name_input.strip()
+                                if not rn:
+                                    renderer.menu_message = "必须填写房间名。"
+                                else:
+                                    renderer.menu_message = ""
+                                    if net:
+                                        net.send({"type": 1010, "payload": {"room_name": rn, "config": renderer.config_data}})
+                            else:
+                                # Start/commit row editing
+                                if not renderer.config_rows or renderer.config_selected >= len(renderer.config_rows):
+                                    continue
+                                row = renderer.config_rows[renderer.config_selected]
+                                if not row.get("editable", True):
+                                    continue
+                                if renderer.config_editing:
+                                    # Commit
+                                    s = renderer.config_edit_buffer
+                                    old = row.get("value")
+                                    try:
+                                        if isinstance(old, bool):
+                                            v = s.strip().lower() in ("1", "true", "yes", "y", "on")
+                                        elif isinstance(old, int):
+                                            v = int(float(s.strip() or "0"))
+                                        elif isinstance(old, float):
+                                            v = float(s.strip() or "0")
+                                        else:
+                                            v = s
+                                        row["value"] = v
+                                        renderer._set_by_path(renderer.config_data, row["path"], v)
+                                        renderer.menu_message = ""
+                                    except Exception:
+                                        renderer.menu_message = "值解析失败：请检查类型。"
+                                    renderer.config_editing = False
+                                    renderer.config_edit_buffer = ""
+                                else:
+                                    renderer.config_editing = True
+                                    renderer.config_edit_buffer = str(row.get("value", ""))
+                        elif event.key == pygame.K_BACKSPACE:
+                            if renderer.config_editing:
+                                renderer.config_edit_buffer = renderer.config_edit_buffer[:-1]
+                        else:
+                            if renderer.config_editing:
+                                renderer.config_edit_buffer += event.unicode
                 continue
 
             # --- State: GAME ---
@@ -206,11 +365,18 @@ def main():
                 if mt == 1012:
                     renderer.state = "GAME"
                     state.config = pl.get("config")
+                    renderer.menu_message = ""
                 elif mt == 3001:
                     state.map_tiles = pl["map_tiles"]
                     state.my_pos = [pl["spawn_pos"]["x"], pl["spawn_pos"]["y"]]
                 elif mt == 3002:
                     state.update_from_server(pl)
+                elif mt == 1014:
+                    renderer.rooms = pl.get("rooms", []) or []
+                    renderer.room_list_selected = 0
+                    renderer.room_list_scroll = 0
+                elif mt == 4001:
+                    renderer.menu_message = (pl.get("msg") if isinstance(pl, dict) else str(pl))
 
         # Logic
         if renderer.state == "GAME" and net:

@@ -8,16 +8,25 @@
   "packet_types": {
     "C2S": {
       "LOGIN_REQ": 1001,
+      "CREATE_ROOM": 1010,
+      "JOIN_ROOM": 1011,
+      "LIST_ROOMS": 1013,
       "HEARTBEAT_REQ": 1002,
       "MOVE_REQ": 2001,
       "USE_ITEM_REQ": 2002,
       "INTERACT_REQ": 2003,
       "PICKUP_REQ": 2004,
       "DROP_REQ": 2005,
-      "CHOOSE_TACTIC_REQ": 2006
+      "CHOOSE_TACTIC_REQ": 2006,
+      "BUY_REQ": 2007,
+      "SELL_REQ": 2008,
+      "SHOP_REFRESH_REQ": 2009,
+      "DEV_SKIP_PHASE_REQ": 9001
     },
     "S2C": {
       "LOGIN_RESP": 1001,
+      "ROOM_JOINED": 1012,
+      "ROOMS_LIST": 1014,
       "HEARTBEAT_RESP": 1002,
       "GAME_START_PUSH": 3001,
       "GAME_STATE_PUSH": 3002,
@@ -58,7 +67,49 @@
     "C2S_LOGIN_REQ": {
       "type": 1001,
       "payload": {
-        "username": "string"
+        "name": "string"
+      }
+    },
+    "C2S_CREATE_ROOM": {
+      "type": 1010,
+      "payload": {
+        "room_name": "string (required, unique)",
+        "config": "object (partial or full GameConfig overlay)"
+      }
+    },
+    "C2S_LIST_ROOMS": {
+      "type": 1013,
+      "payload": {}
+    },
+    "S2C_ROOMS_LIST": {
+      "type": 1014,
+      "payload": {
+        "rooms": [
+          {
+            "room_id": "string",
+            "room_name": "string",
+            "players": "int",
+            "max_players": "int",
+            "phase": "int",
+            "map_width": "int",
+            "map_height": "int"
+          }
+        ]
+      }
+    },
+    "C2S_JOIN_ROOM": {
+      "type": 1011,
+      "payload": {
+        "room_id": "string (required)"
+      }
+    },
+    "S2C_ROOM_JOINED": {
+      "type": 1012,
+      "payload": {
+        "success": "bool",
+        "room_id": "string",
+        "room_name": "string",
+        "config": "object (GameConfig copy for this room)"
       }
     },
     "S2C_LOGIN_RESP": {
@@ -96,10 +147,30 @@
     "C2S_USE_ITEM_REQ": {
       "type": 2002,
       "payload": {
-        "item_uid": "string",
-        "target_uid": "string (optional, for attacks)",
-        "target_pos": "Vector2 (optional, for grenades/AoE)"
+        "slot_index": "int"
       }
+    },
+    "C2S_DROP_REQ": {
+      "type": 2005,
+      "payload": {
+        "slot_index": "int"
+      }
+    },
+    "C2S_BUY_REQ": {
+      "type": 2007,
+      "payload": {
+        "item_id": "string"
+      }
+    },
+    "C2S_SELL_REQ": {
+      "type": 2008,
+      "payload": {
+        "slot_index": "int"
+      }
+    },
+    "C2S_SHOP_REFRESH_REQ": {
+      "type": 2009,
+      "payload": {}
     },
     "S2C_GAME_STATE_PUSH": {
       "type": 3002,

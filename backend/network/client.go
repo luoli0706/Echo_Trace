@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"echo_trace_server/logic"
@@ -72,6 +73,10 @@ func (c *Client) readPump() {
 		if typeCode == 1011 { // JOIN_ROOM
 			payload, _ := req["payload"].(map[string]interface{})
 			c.handleJoinRoom(payload)
+			continue
+		}
+		if typeCode == 1013 { // LIST_ROOMS
+			c.handleListRooms()
 			continue
 		}
 
@@ -176,8 +181,20 @@ func (c *Client) handleCreateRoom(payload map[string]interface{}) {
 	// For now, let's just use default config passed from main (we need access to it?)
 	// Or parse parts.
 
-	// Minimal: Generate Room ID
-	roomID := fmt.Sprintf("room_%d", time.Now().Unix()%1000)
+	roomName := ""
+	if payload != nil {
+		if rn, ok := payload["room_name"].(string); ok {
+			roomName = rn
+		}
+	}
+	roomName = strings.TrimSpace(roomName)
+	if roomName == "" {
+		c.SendJSON(map[string]interface{}{
+			"type":    4001,
+			"payload": map[string]interface{}{"msg": "创建房间失败：必须填写房间名。"},
+		})
+		return
+	}
 
 	// Start from server defaults loaded from game_config.json.
 	cfg := getDefaultConfigClone()
@@ -206,16 +223,24 @@ func (c *Client) handleCreateRoom(payload map[string]interface{}) {
 		}
 	}
 
-	room := GlobalManager.CreateRoom(roomID, cfg)
+	room, roomID, ok := GlobalManager.CreateRoom(roomName, cfg)
+	if !ok || room == nil {
+		c.SendJSON(map[string]interface{}{
+			"type":    4001,
+			"payload": map[string]interface{}{"msg": "创建房间失败：房间名已存在，请重新命名。"},
+		})
+		return
+	}
 	c.CurrentRoom = room
 	room.Register <- c
 
 	c.SendJSON(map[string]interface{}{
 		"type": 1012, // ROOM_JOINED
 		"payload": map[string]interface{}{
-			"success": true,
-			"room_id": roomID,
-			"config":  cfg,
+			"success":   true,
+			"room_id":   roomID,
+			"room_name": roomName,
+			"config":    cfg,
 		},
 	})
 }
@@ -225,42 +250,51 @@ func (c *Client) handleJoinRoom(payload map[string]interface{}) {
 		return
 	}
 
-	// Auto join first available or by ID
-	var room *Room
-
-	// For Alpha: Join "room_id" if provided, else any
+	roomID := ""
 	if payload != nil {
 		if rid, ok := payload["room_id"].(string); ok {
-			room = GlobalManager.GetRoom(rid)
+			roomID = rid
 		}
 	}
-
-	if room == nil {
-		// Pick first
-		rooms := GlobalManager.ListRooms()
-		if len(rooms) > 0 {
-			room = GlobalManager.GetRoom(rooms[0])
-		}
+	roomID = strings.TrimSpace(roomID)
+	if roomID == "" {
+		c.SendJSON(map[string]interface{}{
+			"type":    4001,
+			"payload": map[string]interface{}{"msg": "加入房间失败：缺少 room_id。"},
+		})
+		return
 	}
 
+	room := GlobalManager.GetRoom(roomID)
 	if room != nil {
 		c.CurrentRoom = room
 		room.Register <- c
 		c.SendJSON(map[string]interface{}{
 			"type": 1012, // ROOM_JOINED
 			"payload": map[string]interface{}{
-				"success": true,
-				"room_id": room.ID,
-				"config":  room.Config,
+				"success":   true,
+				"room_id":   room.ID,
+				"room_name": room.Name,
+				"config":    room.Config,
 			},
 		})
 	} else {
 		// Error
 		c.SendJSON(map[string]interface{}{
 			"type":    4001,
-			"payload": map[string]interface{}{"msg": "No rooms available. Create one!"},
+			"payload": map[string]interface{}{"msg": "加入房间失败：房间不存在或已关闭。"},
 		})
 	}
+}
+
+func (c *Client) handleListRooms() {
+	rooms := GlobalManager.ListRoomSummaries()
+	c.SendJSON(map[string]interface{}{
+		"type": 1014, // ROOMS_LIST
+		"payload": map[string]interface{}{
+			"rooms": rooms,
+		},
+	})
 }
 
 func (c *Client) writePump() {
