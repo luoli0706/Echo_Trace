@@ -51,9 +51,9 @@ python main.py
 *   **WASD:** 移动角色 (Move Character 🏃)
 *   **E:** 拾取物品 (Pick up Item 📦)
 *   **F:** 交互 / 修复电机 / 打开商店 (Interact / Fix Motor ⚡ / Shop 💰)
-*   **1-3:** 使用物品 (Use Item) / 购买商品 (Buy Item)
-*   **Shift + 1-3:** 丢弃物品 (Drop Item)
-*   **Ctrl + 1-3:** 出售物品 (Sell Item - 需在商人附近)
+*   **1-6:** 使用物品 (Use Item) / 购买商品 (Buy Item)
+*   **Shift + 1-6:** 丢弃物品 (Drop Item)
+*   **Ctrl + 1-6:** 出售物品 (Sell Item - 需在商人附近)
 *   **ESC:** 暂停菜单 / 退出界面 (Pause / Close Menu)
 
 ### 游戏阶段 (Phases)
@@ -68,6 +68,13 @@ python main.py
 *   **经济系统:** 搜刮物资、撤离带出物品均可获得资金，用于购买高级装备。
 *   **高价值空投:** 每阶段开始时在地图中心刷新空投 (🎁)，包含高级装备和大量资金，全图可见。
 *   **持久化:** 玩家名称、资金和库存会保存至 SQLite 数据库。
+
+## 🏠 房间与续局 (Rooms & Resume)
+
+- **房间列表**：菜单 JOIN 进入房间列表，显示阶段/人数/地图尺寸，支持刷新与点击加入
+- **创建房间配置**：创建房间时使用完整 `game_config.json` 表格逐项配置；服务端会对超限值强制截断（客户端也会在确认输入时回填矫正值）
+- **断线重连与超时踢出**：服务端在 `server.disconnect_grace_sec` 宽限期内允许用同 `session_id` 重连恢复进度；超过宽限期会清除进度并视为离开
+- **冷启动续局**：CONNECT 界面可选输入 `Resume ID (session_id)`，只有填写该 ID 才会在连接后自动尝试回到上次房间
 
 ## 🛠 技术栈 (Tech Stack)
 *   **Server:** Go (Gorilla WebSocket), Mutex-protected GameState, Grid-based Map, SQLite.

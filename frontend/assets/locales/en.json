@@ -1,6 +1,8 @@
 {
   "CONNECT_TITLE": "ECHO TRACE - CONNECT",
   "ENTER_URL": "Enter Server URL and Press ENTER",
+  "ENTER_RESUME_ID": "Optional: Resume ID (session_id) for cold-start resume",
+  "CONNECT_HINT": "TAB switch field | Enter connect (only resumes when Resume ID is set)",
   "LOGIN_TITLE": "IDENTITY VERIFICATION",
   "ENTER_NAME": "Enter Agent Name and Press ENTER",
   "MENU_TITLE": "MISSION CONTROL",

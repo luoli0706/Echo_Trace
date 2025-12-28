@@ -399,6 +399,14 @@ func (gs *GameState) AddPlayer(sessionID string) *Player {
 	gs.Mutex.Lock()
 	defer gs.Mutex.Unlock()
 
+	// Reconnect: if a player with the same sessionID exists, resume it.
+	if existing, ok := gs.Players[sessionID]; ok && existing != nil {
+		existing.Disconnected = false
+		existing.DisconnectedAt = time.Time{}
+		// Keep inventory/pos/funds/tactic/etc.
+		return existing
+	}
+
 	spawnPos := gs.Map.GetRandomSpawnPos()
 	invCap := gs.Config.Gameplay.InventorySize
 	if invCap <= 0 {
@@ -437,6 +445,29 @@ func (gs *GameState) AddPlayer(sessionID string) *Player {
 	gs.Players[sessionID] = p
 	gs.RecalculateStats(p)
 	return p
+}
+
+func (gs *GameState) MarkPlayerDisconnected(sessionID string) {
+	gs.Mutex.Lock()
+	defer gs.Mutex.Unlock()
+	if p, ok := gs.Players[sessionID]; ok && p != nil {
+		p.Disconnected = true
+		p.DisconnectedAt = time.Now()
+		// Cancel any channeling/extraction while offline.
+		p.ChannelingTargetUID = ""
+		p.IsExtracting = false
+	}
+}
+
+func (gs *GameState) removePlayerLocked(sessionID string) {
+	if p, ok := gs.Players[sessionID]; ok {
+		// Save to DB
+		if p != nil && p.Name != "Unknown" {
+			storage.SavePlayer(p.Name, p.Name, p.Funds, len(p.Inventory))
+			log.Printf("Saved player %s data.", p.Name)
+		}
+		delete(gs.Players, sessionID)
+	}
 }
 
 func (gs *GameState) RecalculateStats(p *Player) {
@@ -557,15 +588,7 @@ func (gs *GameState) RecalculateStats(p *Player) {
 func (gs *GameState) RemovePlayer(sessionID string) {
 	gs.Mutex.Lock()
 	defer gs.Mutex.Unlock()
-
-	if p, ok := gs.Players[sessionID]; ok {
-		// Save to DB
-		if p.Name != "Unknown" {
-			storage.SavePlayer(p.Name, p.Name, p.Funds, len(p.Inventory))
-			log.Printf("Saved player %s data.", p.Name)
-		}
-		delete(gs.Players, sessionID)
-	}
+	gs.removePlayerLocked(sessionID)
 }
 
 func (gs *GameState) ProcessExtraction(p *Player) {
@@ -675,6 +698,25 @@ func (gs *GameState) UpdateTick(dt float64) {
 	gs.Mutex.Lock()
 	defer gs.Mutex.Unlock()
 
+	// 0. Disconnect cleanup (kick after grace period)
+	graceSec := 0
+	if gs.Config != nil {
+		graceSec = gs.Config.Server.DisconnectGraceSec
+	}
+	if graceSec > 0 {
+		now := time.Now()
+		deadline := time.Duration(graceSec) * time.Second
+		for sid, p := range gs.Players {
+			if p == nil {
+				continue
+			}
+			if p.Disconnected && !p.DisconnectedAt.IsZero() && now.Sub(p.DisconnectedAt) > deadline {
+				gs.addEvent("PLAYER_KICK", fmt.Sprintf("%s disconnected too long and was removed.", p.Name))
+				gs.removePlayerLocked(sid)
+			}
+		}
+	}
+
 	if gs.Phase == PhaseInit {
 		return
 	}
@@ -698,6 +740,15 @@ func (gs *GameState) UpdateTick(dt float64) {
 
 	// 2. Channeling Logic
 	for _, p := range gs.Players {
+		if p == nil {
+			continue
+		}
+		if p.Disconnected {
+			// No channeling progress while offline.
+			p.IsExtracting = false
+			p.ChannelingTargetUID = ""
+			continue
+		}
 		if p.IsAlive && p.ChannelingTargetUID != "" {
 			ent, ok := gs.Entities[p.ChannelingTargetUID]
 			if !ok {
@@ -788,12 +839,12 @@ func (gs *GameState) UpdateTick(dt float64) {
 	playerRadius := 0.25 // Visual size is 0.5, so radius 0.25 fits nicely
 	// Recompute stats each tick so timed buffs expire correctly and weight penalties stay accurate.
 	for _, p := range gs.Players {
-		if p != nil && p.IsAlive {
+		if p != nil && p.IsAlive && !p.Disconnected {
 			gs.RecalculateStats(p)
 		}
 	}
 	for _, p := range gs.Players {
-		if !p.IsAlive {
+		if p == nil || !p.IsAlive || p.Disconnected {
 			continue
 		}
 		if p.TargetDir.X != 0 || p.TargetDir.Y != 0 {

@@ -1,5 +1,7 @@
 import sys
 import queue
+import json
+from pathlib import Path
 import pygame
 from client.network import NetworkClient
 from client.gamestate import GameState
@@ -9,8 +11,29 @@ from client.config import WINDOW_WIDTH, WINDOW_HEIGHT
 # Default Server
 DEFAULT_SERVER_URL = "ws://localhost:8080/ws"
 
+CLIENT_STATE_PATH = Path.home() / ".echo_trace_client.json"
+
+
+def _load_client_state():
+    try:
+        with open(CLIENT_STATE_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_client_state(data: dict):
+    try:
+        with open(CLIENT_STATE_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
 def main():
     pygame.init()
+    # Enable IME-friendly text input (TEXTINPUT) so Chinese/Japanese input works.
+    pygame.key.start_text_input()
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
     pygame.display.set_caption("Echo Trace Client [Alpha 0.5]")
     clock = pygame.time.Clock()
@@ -18,9 +41,32 @@ def main():
     recv_q = queue.Queue()
     net = None
 
+    persisted = _load_client_state()
+    persisted_session_id = str(persisted.get("session_id") or "")
+    persisted_name = str(persisted.get("name") or "")
+    persisted_last_room_id = str(persisted.get("last_room_id") or "")
+
     state = GameState()
     renderer = Renderer(screen)
+    if str(persisted.get("server_url") or ""):
+        renderer.server_input = str(persisted.get("server_url") or renderer.server_input)
+    if persisted_name:
+        renderer.name_input = persisted_name
+    # Cold-start resume is gated: user must provide Resume ID (session_id) on CONNECT.
+    renderer.resume_id_input = ""
     input_dir = [0, 0]
+
+    def _append_text(dst: str, text: str, max_len: int = 120) -> str:
+        if not text:
+            return dst
+        # Filter surrogate code points (can appear during IME composition on some systems).
+        filtered = "".join(ch for ch in str(text) if not ("\ud800" <= ch <= "\udfff"))
+        if not filtered:
+            return dst
+        out = dst + filtered
+        if len(out) > max_len:
+            out = out[:max_len]
+        return out
 
     running = True
     while running:
@@ -32,19 +78,34 @@ def main():
             # --- State: CONNECT ---
             if renderer.state == "CONNECT":
                 if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_RETURN:
+                    if event.key == pygame.K_TAB:
+                        renderer.connect_focus = "resume_id" if renderer.connect_focus == "server" else "server"
+                    elif event.key == pygame.K_RETURN:
                         url = renderer.server_input.strip() or DEFAULT_SERVER_URL
+                        resume_id = renderer.resume_id_input.strip()
                         print(f"Connecting to {url}...")
                         try:
-                            net = NetworkClient(url, recv_q)
+                            # Only resume when Resume ID is explicitly provided.
+                            net = NetworkClient(url, recv_q, session_id=(resume_id or ""), player_name=persisted_name)
+                            if resume_id and persisted_last_room_id:
+                                net.set_auto_join(persisted_last_room_id)
                             net.start()
                             renderer.state = "LOGIN"
+
+                            persisted["server_url"] = url
+                            _save_client_state(persisted)
                         except Exception as e:
                             print(f"Connection failed: {e}")
                     elif event.key == pygame.K_BACKSPACE:
-                        renderer.server_input = renderer.server_input[:-1]
+                        if renderer.connect_focus == "server":
+                            renderer.server_input = renderer.server_input[:-1]
+                        else:
+                            renderer.resume_id_input = renderer.resume_id_input[:-1]
+                elif event.type == pygame.TEXTINPUT:
+                    if renderer.connect_focus == "server":
+                        renderer.server_input = _append_text(renderer.server_input, event.text, max_len=200)
                     else:
-                        renderer.server_input += event.unicode
+                        renderer.resume_id_input = _append_text(renderer.resume_id_input, event.text, max_len=80)
                 continue
 
             # --- State: LOGIN ---
@@ -52,12 +113,16 @@ def main():
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_RETURN:
                         name = renderer.name_input.strip() or "Agent_47"
-                        if net: net.send({"type": 1001, "payload": {"name": name}})
+                        persisted_name = name
+                        persisted["name"] = persisted_name
+                        _save_client_state(persisted)
+                        if net:
+                            net.set_identity(player_name=persisted_name)
                         renderer.state = "MENU"
                     elif event.key == pygame.K_BACKSPACE:
                         renderer.name_input = renderer.name_input[:-1]
-                    else:
-                        renderer.name_input += event.unicode
+                elif event.type == pygame.TEXTINPUT:
+                    renderer.name_input = _append_text(renderer.name_input, event.text, max_len=40)
                 continue
 
             # --- State: MENU ---
@@ -93,7 +158,12 @@ def main():
                         if renderer.rooms and renderer.room_list_selected < len(renderer.rooms):
                             rid = renderer.rooms[renderer.room_list_selected].get("room_id")
                             if rid and net:
-                                net.send({"type": 1011, "payload": {"room_id": rid}})
+                                payload = {"room_id": rid}
+                                if persisted_session_id:
+                                    payload["session_id"] = persisted_session_id
+                                if persisted_name:
+                                    payload["name"] = persisted_name
+                                net.send({"type": 1011, "payload": payload})
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if renderer.room_list_refresh_rect and renderer.room_list_refresh_rect.collidepoint(event.pos):
                         if net: net.send({"type": 1013, "payload": {}})
@@ -108,7 +178,12 @@ def main():
                             if net and idx < len(renderer.rooms):
                                 rid = renderer.rooms[idx].get("room_id")
                                 if rid:
-                                    net.send({"type": 1011, "payload": {"room_id": rid}})
+                                    payload = {"room_id": rid}
+                                    if persisted_session_id:
+                                        payload["session_id"] = persisted_session_id
+                                    if persisted_name:
+                                        payload["name"] = persisted_name
+                                    net.send({"type": 1011, "payload": payload})
                             break
                     # Mouse wheel (older pygame)
                     if event.button in (4, 5):
@@ -127,7 +202,12 @@ def main():
                         else:
                             renderer.menu_message = ""
                             if net:
-                                net.send({"type": 1010, "payload": {"room_name": rn, "config": renderer.config_data}})
+                                payload = {"room_name": rn, "config": renderer.config_data}
+                                if persisted_session_id:
+                                    payload["session_id"] = persisted_session_id
+                                if persisted_name:
+                                    payload["name"] = persisted_name
+                                net.send({"type": 1010, "payload": payload})
                         continue
                     if renderer.config_back_rect and renderer.config_back_rect.collidepoint(event.pos):
                         renderer.state = "MENU"
@@ -168,8 +248,6 @@ def main():
                             renderer.config_focus = "table"
                         elif event.key == pygame.K_BACKSPACE:
                             renderer.room_name_input = renderer.room_name_input[:-1]
-                        else:
-                            renderer.room_name_input += event.unicode
                         continue
 
                     # Focus: table
@@ -206,7 +284,12 @@ def main():
                                 else:
                                     renderer.menu_message = ""
                                     if net:
-                                        net.send({"type": 1010, "payload": {"room_name": rn, "config": renderer.config_data}})
+                                        payload = {"room_name": rn, "config": renderer.config_data}
+                                        if persisted_session_id:
+                                            payload["session_id"] = persisted_session_id
+                                        if persisted_name:
+                                            payload["name"] = persisted_name
+                                        net.send({"type": 1010, "payload": payload})
                             else:
                                 # Start/commit row editing
                                 if not renderer.config_rows or renderer.config_selected >= len(renderer.config_rows):
@@ -243,7 +326,13 @@ def main():
                                 renderer.config_edit_buffer = renderer.config_edit_buffer[:-1]
                         else:
                             if renderer.config_editing:
-                                renderer.config_edit_buffer += event.unicode
+                                pass
+                elif event.type == pygame.TEXTINPUT:
+                    # IME-friendly text entry
+                    if renderer.config_focus == "room_name":
+                        renderer.room_name_input = _append_text(renderer.room_name_input, event.text, max_len=40)
+                    elif renderer.config_focus == "table" and renderer.config_editing:
+                        renderer.config_edit_buffer = _append_text(renderer.config_edit_buffer, event.text, max_len=60)
                 continue
 
             # --- State: GAME ---
@@ -254,6 +343,11 @@ def main():
                         if state.phase == 0 and hasattr(renderer, 'lobby_back_rect') and renderer.lobby_back_rect.collidepoint(event.pos):
                             renderer.state = "MENU"
                             state = GameState() # Reset
+                            if net:
+                                net.clear_auto_join()
+                            persisted_last_room_id = ""
+                            persisted.pop("last_room_id", None)
+                            _save_client_state(persisted)
                             continue
                             
                         renderer.handle_click(event.pos)
@@ -351,6 +445,11 @@ def main():
                             renderer.state = "MENU"
                             state = GameState()  # Reset local
                             renderer.pause_route = []
+                            if net:
+                                net.clear_auto_join()
+                            persisted_last_room_id = ""
+                            persisted.pop("last_room_id", None)
+                            _save_client_state(persisted)
 
                 elif event.type == pygame.MOUSEWHEEL:
                     if renderer.pause_view() == "item_manual":
@@ -363,10 +462,29 @@ def main():
             while not recv_q.empty():
                 msg = recv_q.get()
                 mt, pl = msg.get("type"), msg.get("payload")
+                if mt == 1001 and isinstance(pl, dict):
+                    sid = str(pl.get("session_id") or "")
+                    if sid:
+                        persisted_session_id = sid
+                        persisted["session_id"] = sid
+                        _save_client_state(persisted)
+                        net.set_identity(session_id=sid)
                 if mt == 1012:
                     renderer.state = "GAME"
                     state.config = pl.get("config")
                     renderer.menu_message = ""
+
+                    # Remember the room_id for reconnect auto-join.
+                    rid = str(pl.get("room_id") or "")
+                    if rid:
+                        persisted_last_room_id = rid
+                        persisted["last_room_id"] = rid
+                        _save_client_state(persisted)
+                        net.set_auto_join(rid)
+
+                    # Ensure server sees our display name after joining.
+                    if persisted_name:
+                        net.send({"type": 1001, "payload": {"name": persisted_name}})
                 elif mt == 3001:
                     state.map_tiles = pl["map_tiles"]
                     state.my_pos = [pl["spawn_pos"]["x"], pl["spawn_pos"]["y"]]

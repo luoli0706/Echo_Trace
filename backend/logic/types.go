@@ -84,6 +84,10 @@ type Player struct {
 	IsExtracting    bool    `json:"is_extracting"`
 	ExtractionTimer float64 `json:"extraction_timer"`
 	IsExtracted     bool    `json:"is_extracted"`
+
+	// Reconnect / disconnect handling (server-authoritative)
+	Disconnected   bool      `json:"-"`
+	DisconnectedAt time.Time `json:"-"`
 }
 
 type Item struct {
@@ -102,6 +106,7 @@ type GameConfig struct {
 		TickRateMs               int  `json:"tick_rate_ms"`
 		MaxPlayers               int  `json:"max_players_per_room"`
 		WaitForPlayersTimeoutSec int  `json:"wait_for_players_timeout_sec"`
+		DisconnectGraceSec       int  `json:"disconnect_grace_sec"`
 		DebugLogColor            bool `json:"debug_log_color"`
 	} `json:"server"`
 	Map struct {

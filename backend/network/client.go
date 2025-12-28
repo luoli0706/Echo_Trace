@@ -22,6 +22,7 @@ type Client struct {
 	Conn        *websocket.Conn
 	Send        chan []byte
 	SessionID   string
+	PlayerName  string
 }
 
 func ServeWs(w http.ResponseWriter, r *http.Request) {
@@ -181,6 +182,19 @@ func (c *Client) handleCreateRoom(payload map[string]interface{}) {
 	// For now, let's just use default config passed from main (we need access to it?)
 	// Or parse parts.
 
+	// Accept client-provided stable session_id for reconnect.
+	if payload != nil {
+		if sid, ok := payload["session_id"].(string); ok {
+			sid = strings.TrimSpace(sid)
+			if sid != "" {
+				c.SessionID = sid
+			}
+		}
+		if nm, ok := payload["name"].(string); ok {
+			c.PlayerName = strings.TrimSpace(nm)
+		}
+	}
+
 	roomName := ""
 	if payload != nil {
 		if rn, ok := payload["room_name"].(string); ok {
@@ -254,6 +268,19 @@ func (c *Client) handleCreateRoom(payload map[string]interface{}) {
 func (c *Client) handleJoinRoom(payload map[string]interface{}) {
 	if c.CurrentRoom != nil {
 		return
+	}
+
+	// Accept client-provided stable session_id for reconnect.
+	if payload != nil {
+		if sid, ok := payload["session_id"].(string); ok {
+			sid = strings.TrimSpace(sid)
+			if sid != "" {
+				c.SessionID = sid
+			}
+		}
+		if nm, ok := payload["name"].(string); ok {
+			c.PlayerName = strings.TrimSpace(nm)
+		}
 	}
 
 	roomID := ""

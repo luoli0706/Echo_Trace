@@ -30,6 +30,9 @@ class Renderer:
         self.font = get_cjk_font(FONT_SIZE); self.hud_font = get_cjk_font(16); self.time_font = pygame.font.SysFont("consolas", 24)
         self.fog_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
         self.state = "CONNECT"; self.server_input = "ws://localhost:8080/ws"; self.name_input = "Agent_07"
+        # CONNECT inputs
+        self.connect_focus = "server"  # server | resume_id
+        self.resume_id_input = ""  # optional session_id for cold-start resume
         self.menu_message = ""
         # Room list state
         self.rooms = []
@@ -287,6 +290,9 @@ class Renderer:
         if path == "server.wait_for_players_timeout_sec":
             return clamp_num(value, 5, 300, is_int=True), msg
 
+        if path == "server.disconnect_grace_sec":
+            return clamp_num(value, 0, 600, is_int=True), msg
+
         # --- map ---
         if path == "map.width":
             return clamp_num(value, 16, 256, is_int=True), msg
@@ -386,6 +392,108 @@ class Renderer:
 
         # Default: keep value
         return value, ""
+
+    def config_value_range_hint(self, path: str) -> str:
+        """Return a user-facing allowed range hint for a config path.
+        Kept in sync with clamp_config_value() / backend ClampGameConfig()."""
+        if not path:
+            return ""
+
+        def inv_size():
+            try:
+                return int(self.config_data.get("gameplay", {}).get("inventory_size", 6))
+            except Exception:
+                return 6
+
+        def motors_spawn_count():
+            try:
+                return int(self.config_data.get("phases", {}).get("phase_2_conflict", {}).get("motors_spawn_count", 50))
+            except Exception:
+                return 50
+
+        # --- server ---
+        if path == "server.tick_rate_ms":
+            return "允许范围: 10-200"
+        if path == "server.max_players_per_room":
+            return "允许范围: 1-16"
+        if path == "server.wait_for_players_timeout_sec":
+            return "允许范围: 5-300"
+        if path == "server.disconnect_grace_sec":
+            return "允许范围: 0-600"
+
+        # --- map ---
+        if path in ("map.width", "map.height"):
+            return "允许范围: 16-256"
+        if path == "map.aoi_grid_size":
+            return "允许范围: 4-64"
+        if path == "map.wall_density":
+            return "允许范围: 0.0-0.6"
+
+        # --- gameplay ---
+        if path == "gameplay.inventory_size":
+            return "允许范围: 1-12"
+        if path == "gameplay.safe_slot_count":
+            return f"允许范围: 0-4 且 ≤ inventory_size(当前={inv_size()})"
+        if path == "gameplay.base_move_speed":
+            return "允许范围: 0.5-10.0"
+        if path == "gameplay.base_view_radius":
+            return "允许范围: 1.0-20.0"
+        if path == "gameplay.hear_radius":
+            return "允许范围: 1.0-30.0"
+        if path == "gameplay.base_max_hp":
+            return "允许范围: 10.0-300.0"
+        if path == "gameplay.base_max_weight":
+            return "允许范围: 1.0-50.0"
+        if path.startswith("gameplay.weight_threshold_"):
+            return "允许范围: 0.0-1.0"
+
+        # --- items ---
+        if path == "items.initial_world_item_count":
+            return "允许范围: 0-500"
+        if path == "items.respawn_interval_sec":
+            return "允许范围: 0.5-30.0"
+        if path == "items.merchant_stock_size":
+            return "允许范围: 1-6"
+        if path == "items.merchant_refresh_cost":
+            return "允许范围: 0-10000"
+        if path.startswith("items.max_world_item_count."):
+            return "允许范围: 0-1000"
+        if path.startswith("items.tier_weights_by_phase."):
+            return "允许范围: 0.0-1.0"
+        if path.startswith("items.scavenge_share_by_phase."):
+            return "允许范围: 0.0-1.0"
+        if path == "items.tactic_focus_share":
+            return "允许范围: 0.0-1.0"
+
+        # --- tactics ---
+        if path.startswith("tactics.") and path.endswith("_mult"):
+            return "允许范围: 0.5-2.0"
+
+        # --- combat ---
+        if path == "combat.base_attack_damage":
+            return "允许范围: 1.0-200.0"
+        if path == "combat.advanced_recon_duration_sec":
+            return "允许范围: 1.0-120.0"
+
+        # --- phases ---
+        if path in ("phases.phase_1_search.duration_sec", "phases.phase_2_conflict.duration_sec"):
+            return "允许范围: 10-3600"
+        if path == "phases.phase_2_conflict.motors_spawn_count":
+            return "允许范围: 0-50"
+        if path == "phases.phase_2_conflict.motors_required_to_open_exit":
+            return f"允许范围: 0-50 且 ≤ motors_spawn_count(当前={motors_spawn_count()})"
+        if path == "phases.phase_2_conflict.motor_decipher_time_sec":
+            return "允许范围: 1-120"
+        if path == "phases.phase_3_escape.extraction_slots_total":
+            return "允许范围: 0-8"
+        if path == "phases.phase_3_escape.extraction_cooldown_sec":
+            return "允许范围: 0-120"
+        if path == "phases.phase_3_escape.global_pulse_interval_sec":
+            return "允许范围: 1-60"
+        if path == "phases.phase_3_escape.view_radius_decay_rate_per_sec":
+            return "允许范围: 0.0-2.0"
+
+        return ""
 
     def _wrap_angle(self, a):
         # Normalize to [-pi, pi)
@@ -606,10 +714,29 @@ class Renderer:
 
     def draw_connect(self):
         self.screen.fill(COLOR_BG); t = self.font.render(self.t("CONNECT_TITLE"), True, (0, 255, 255))
-        self.screen.blit(t, t.get_rect(center=(WINDOW_WIDTH//2, 200)))
-        r = pygame.Rect(WINDOW_WIDTH//2 - 200, 300, 400, 40); pygame.draw.rect(self.screen, (50, 50, 60), r); pygame.draw.rect(self.screen, (0, 255, 255), r, 2)
-        self.screen.blit(self.font.render(self.server_input + "|", True, (255, 255, 255)), (r.x + 10, r.y + 5))
-        self.screen.blit(self.hud_font.render(self.t("ENTER_URL"), True, (150, 150, 150)), (WINDOW_WIDTH//2 - 150, 360))
+        self.screen.blit(t, t.get_rect(center=(WINDOW_WIDTH//2, 170)))
+        if self.menu_message:
+            msg = self.hud_font.render(self.menu_message, True, (255, 120, 120))
+            self.screen.blit(msg, msg.get_rect(center=(WINDOW_WIDTH//2, 215)))
+
+        # Server URL
+        r1 = pygame.Rect(WINDOW_WIDTH//2 - 220, 260, 440, 40)
+        pygame.draw.rect(self.screen, (50, 50, 60), r1)
+        pygame.draw.rect(self.screen, (0, 255, 255) if self.connect_focus == "server" else (120, 120, 140), r1, 2)
+        s1 = self.server_input + ("|" if self.connect_focus == "server" else "")
+        self.screen.blit(self.font.render(s1, True, (255, 255, 255)), (r1.x + 10, r1.y + 6))
+        self.screen.blit(self.hud_font.render(self.t("ENTER_URL"), True, (150, 150, 150)), (r1.x + 10, r1.y + 48))
+
+        # Resume ID (session_id)
+        r2 = pygame.Rect(WINDOW_WIDTH//2 - 220, 360, 440, 40)
+        pygame.draw.rect(self.screen, (50, 50, 60), r2)
+        pygame.draw.rect(self.screen, (0, 255, 255) if self.connect_focus == "resume_id" else (120, 120, 140), r2, 2)
+        s2 = self.resume_id_input + ("|" if self.connect_focus == "resume_id" else "")
+        self.screen.blit(self.font.render(s2, True, (255, 255, 255)), (r2.x + 10, r2.y + 6))
+        self.screen.blit(self.hud_font.render(self.t("ENTER_RESUME_ID"), True, (150, 150, 150)), (r2.x + 10, r2.y + 48))
+
+        hint = self.hud_font.render(self.t("CONNECT_HINT"), True, (150, 150, 150))
+        self.screen.blit(hint, hint.get_rect(center=(WINDOW_WIDTH//2, 470)))
 
     def draw_login(self):
         self.screen.fill(COLOR_BG); t = self.font.render(self.t("LOGIN_TITLE"), True, (0, 255, 255))
@@ -704,6 +831,15 @@ class Renderer:
 
         hint = self.hud_font.render(self.t("CONFIG_TABLE_HINT"), True, (150, 150, 150))
         self.screen.blit(hint, (60, 590))
+
+        # Allowed range hint for selected row
+        if self.config_focus == "table" and 0 <= int(self.config_selected) < len(self.config_rows):
+            row = self.config_rows[int(self.config_selected)]
+            if row.get("editable", True):
+                rng = self.config_value_range_hint(str(row.get("path") or ""))
+                if rng:
+                    rng_s = self.hud_font.render(rng, True, (150, 150, 150))
+                    self.screen.blit(rng_s, (60, 612))
 
     def draw_room_list(self):
         self.screen.fill(COLOR_BG)

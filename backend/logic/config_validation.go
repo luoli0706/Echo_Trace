@@ -36,6 +36,7 @@ func ClampGameConfig(cfg *GameConfig) {
 	cfg.Server.TickRateMs = clampInt(cfg.Server.TickRateMs, 10, 200)
 	cfg.Server.MaxPlayers = clampInt(cfg.Server.MaxPlayers, 1, 16)
 	cfg.Server.WaitForPlayersTimeoutSec = clampInt(cfg.Server.WaitForPlayersTimeoutSec, 5, 300)
+	cfg.Server.DisconnectGraceSec = clampInt(cfg.Server.DisconnectGraceSec, 0, 600)
 
 	// --- map ---
 	cfg.Map.Width = clampInt(cfg.Map.Width, 16, 256)

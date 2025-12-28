@@ -6,6 +6,8 @@
     "_comment_max_players": "每个房间的最大玩家数。允许范围: 1-16（超限会被服务端强制截断）。",
     "wait_for_players_timeout_sec": 60,
     "_comment_timeout": "等待满员的最长超时时间（秒）。允许范围: 5-300（超限会被服务端强制截断）。",
+    "disconnect_grace_sec": 60,
+    "_comment_disconnect": "断线重连宽限时间（秒）。断线后在此时间内可重连恢复进度；超过阈值则清除该房间内进度并视为离开。允许范围: 0-600（超限会被服务端强制截断）。",
     "debug_log_color": true
   },
   "map": {

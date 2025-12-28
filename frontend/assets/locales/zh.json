@@ -1,6 +1,8 @@
 {
   "CONNECT_TITLE": "回声追踪 - 连接服务器",
   "ENTER_URL": "输入服务器地址并按回车",
+  "ENTER_RESUME_ID": "可选：输入续局ID(session_id)，用于冷启动续局",
+  "CONNECT_HINT": "TAB 切换输入框 | Enter 连接（填写续局ID才会自动续局）",
   "LOGIN_TITLE": "身份验证",
   "ENTER_NAME": "输入特工代号并按回车",
   "MENU_TITLE": "任务控制中心",

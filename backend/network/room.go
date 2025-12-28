@@ -44,9 +44,19 @@ func (r *Room) Run() {
 		select {
 		case client := <-r.Register:
 			r.Mutex.Lock()
+			// If the same session_id is already connected, drop the old connection.
+			for other := range r.Clients {
+				if other != nil && other.SessionID == client.SessionID {
+					delete(r.Clients, other)
+					close(other.Send)
+				}
+			}
 			r.Clients[client] = true
 			// Direct call to GameState is safe (Mutex)
 			p := r.GameLoop.GameState.AddPlayer(client.SessionID)
+			if client.PlayerName != "" {
+				p.Name = client.PlayerName
+			}
 
 			// Send Login Response
 			loginMsg := map[string]interface{}{
@@ -79,7 +89,17 @@ func (r *Room) Run() {
 			r.Mutex.Lock()
 			if _, ok := r.Clients[client]; ok {
 				delete(r.Clients, client)
-				r.GameLoop.GameState.RemovePlayer(client.SessionID)
+				// Only mark disconnected if no other connection for this session_id exists.
+				stillConnected := false
+				for other := range r.Clients {
+					if other != nil && other.SessionID == client.SessionID {
+						stillConnected = true
+						break
+					}
+				}
+				if !stillConnected {
+					r.GameLoop.GameState.MarkPlayerDisconnected(client.SessionID)
+				}
 				close(client.Send)
 			}
 			r.Mutex.Unlock()
