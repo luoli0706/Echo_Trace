@@ -238,6 +238,155 @@ class Renderer:
             return self.t("PHASE_ENDED")
         return str(phase)
 
+    def _clamp_int(self, v, min_v, max_v):
+        try:
+            v = int(v)
+        except Exception:
+            return min_v
+        if v < min_v:
+            return min_v
+        if v > max_v:
+            return max_v
+        return v
+
+    def _clamp_float(self, v, min_v, max_v):
+        try:
+            v = float(v)
+        except Exception:
+            return min_v
+        if v < min_v:
+            return min_v
+        if v > max_v:
+            return max_v
+        return v
+
+    def clamp_config_value(self, path: str, value, old_value):
+        """Client-side mirror of backend/logic/config_validation.go ClampGameConfig.
+        Returns (clamped_value, message_or_empty)."""
+        msg = ""
+
+        def clamp_num(val, min_v, max_v, is_int=False):
+            nonlocal msg
+            before = val
+            out = self._clamp_int(val, min_v, max_v) if is_int else self._clamp_float(val, min_v, max_v)
+            try:
+                # Use numeric compare when possible.
+                if float(before) > float(max_v):
+                    msg = f"超过上限，已限制为最大值 {max_v}"
+                elif float(before) < float(min_v):
+                    msg = f"低于下限，已限制为最小值 {min_v}"
+            except Exception:
+                pass
+            return out
+
+        # --- server ---
+        if path == "server.tick_rate_ms":
+            return clamp_num(value, 10, 200, is_int=True), msg
+        if path == "server.max_players_per_room":
+            return clamp_num(value, 1, 16, is_int=True), msg
+        if path == "server.wait_for_players_timeout_sec":
+            return clamp_num(value, 5, 300, is_int=True), msg
+
+        # --- map ---
+        if path == "map.width":
+            return clamp_num(value, 16, 256, is_int=True), msg
+        if path == "map.height":
+            return clamp_num(value, 16, 256, is_int=True), msg
+        if path == "map.aoi_grid_size":
+            return clamp_num(value, 4, 64, is_int=True), msg
+        if path == "map.wall_density":
+            return clamp_num(value, 0.0, 0.6, is_int=False), msg
+
+        # --- gameplay ---
+        if path == "gameplay.inventory_size":
+            return clamp_num(value, 1, 12, is_int=True), msg
+        if path == "gameplay.safe_slot_count":
+            # Needs awareness of inventory_size.
+            inv = 6
+            try:
+                inv = int(self.config_data.get("gameplay", {}).get("inventory_size", inv))
+            except Exception:
+                pass
+            out = clamp_num(value, 0, 4, is_int=True)
+            if out > inv:
+                msg = f"安全格不能超过背包格数，已限制为 {inv}"
+                out = inv
+            return out, msg
+        if path == "gameplay.base_move_speed":
+            return clamp_num(value, 0.5, 10.0, is_int=False), msg
+        if path == "gameplay.base_view_radius":
+            return clamp_num(value, 1.0, 20.0, is_int=False), msg
+        if path == "gameplay.hear_radius":
+            return clamp_num(value, 1.0, 30.0, is_int=False), msg
+        if path == "gameplay.base_max_hp":
+            return clamp_num(value, 10.0, 300.0, is_int=False), msg
+        if path == "gameplay.base_max_weight":
+            return clamp_num(value, 1.0, 50.0, is_int=False), msg
+        if path.startswith("gameplay.weight_threshold_"):
+            return clamp_num(value, 0.0, 1.0, is_int=False), msg
+
+        # --- items ---
+        if path == "items.initial_world_item_count":
+            return clamp_num(value, 0, 500, is_int=True), msg
+        if path == "items.respawn_interval_sec":
+            return clamp_num(value, 0.5, 30.0, is_int=False), msg
+        if path == "items.merchant_stock_size":
+            return clamp_num(value, 1, 6, is_int=True), msg
+        if path == "items.merchant_refresh_cost":
+            return clamp_num(value, 0, 10000, is_int=True), msg
+        if path.startswith("items.max_world_item_count."):
+            return clamp_num(value, 0, 1000, is_int=True), msg
+        if path.startswith("items.tier_weights_by_phase."):
+            # Clamp each weight to [0,1]
+            return clamp_num(value, 0.0, 1.0, is_int=False), msg
+        if path.startswith("items.scavenge_share_by_phase."):
+            return clamp_num(value, 0.0, 1.0, is_int=False), msg
+        if path == "items.tactic_focus_share":
+            return clamp_num(value, 0.0, 1.0, is_int=False), msg
+
+        # --- tactics ---
+        if path.startswith("tactics.") and path.endswith("_mult"):
+            return clamp_num(value, 0.5, 2.0, is_int=False), msg
+
+        # --- combat ---
+        if path == "combat.base_attack_damage":
+            return clamp_num(value, 1.0, 200.0, is_int=False), msg
+        if path == "combat.advanced_recon_duration_sec":
+            return clamp_num(value, 1.0, 120.0, is_int=False), msg
+
+        # --- phases ---
+        if path == "phases.phase_1_search.duration_sec":
+            return clamp_num(value, 10, 3600, is_int=True), msg
+        if path == "phases.phase_2_conflict.duration_sec":
+            return clamp_num(value, 10, 3600, is_int=True), msg
+        if path == "phases.phase_2_conflict.motors_spawn_count":
+            return clamp_num(value, 0, 50, is_int=True), msg
+        if path == "phases.phase_2_conflict.motors_required_to_open_exit":
+            max_motors = 50
+            try:
+                max_motors = int(self.config_data.get("phases", {}).get("phase_2_conflict", {}).get("motors_spawn_count", max_motors))
+            except Exception:
+                pass
+            out = clamp_num(value, 0, 50, is_int=True)
+            if out > max_motors:
+                msg = f"该值不能超过 motors_spawn_count，已限制为 {max_motors}"
+                out = max_motors
+            return out, msg
+        if path == "phases.phase_2_conflict.motor_decipher_time_sec":
+            return clamp_num(value, 1, 120, is_int=True), msg
+
+        if path == "phases.phase_3_escape.extraction_slots_total":
+            return clamp_num(value, 0, 8, is_int=True), msg
+        if path == "phases.phase_3_escape.extraction_cooldown_sec":
+            return clamp_num(value, 0, 120, is_int=True), msg
+        if path == "phases.phase_3_escape.global_pulse_interval_sec":
+            return clamp_num(value, 1, 60, is_int=True), msg
+        if path == "phases.phase_3_escape.view_radius_decay_rate_per_sec":
+            return clamp_num(value, 0.0, 2.0, is_int=False), msg
+
+        # Default: keep value
+        return value, ""
+
     def _wrap_angle(self, a):
         # Normalize to [-pi, pi)
         while a >= math.pi:

@@ -35,9 +35,13 @@ func SetDefaultConfig(cfg *logic.GameConfig) {
 func getDefaultConfigClone() *logic.GameConfig {
 	if hasDefaultConfig {
 		cfg := defaultConfig
-		return &cfg
+		out := &cfg
+		logic.ClampGameConfig(out)
+		return out
 	}
-	return &logic.GameConfig{}
+	out := &logic.GameConfig{}
+	logic.ClampGameConfig(out)
+	return out
 }
 
 func InitManager() {

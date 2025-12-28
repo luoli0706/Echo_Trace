@@ -223,6 +223,12 @@ func (c *Client) handleCreateRoom(payload map[string]interface{}) {
 		}
 	}
 
+	// Final safety clamp (server-authoritative).
+	logic.ClampGameConfig(cfg)
+
+	// Hard safety bounds: clamp user-provided values to allowed maximums.
+	logic.ClampGameConfig(cfg)
+
 	room, roomID, ok := GlobalManager.CreateRoom(roomName, cfg)
 	if !ok || room == nil {
 		c.SendJSON(map[string]interface{}{

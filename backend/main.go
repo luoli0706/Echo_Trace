@@ -31,6 +31,9 @@ func main() {
 		log.Fatalf("Parse config error: %v", err)
 	}
 
+	// Enforce safety bounds on loaded defaults.
+	logic.ClampGameConfig(&Config)
+
 	// Make loaded defaults available to room creation.
 	network.SetDefaultConfig(&Config)
 

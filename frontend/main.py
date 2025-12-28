@@ -227,9 +227,10 @@ def main():
                                             v = float(s.strip() or "0")
                                         else:
                                             v = s
-                                        row["value"] = v
-                                        renderer._set_by_path(renderer.config_data, row["path"], v)
-                                        renderer.menu_message = ""
+                                        v2, clamp_msg = renderer.clamp_config_value(row["path"], v, old)
+                                        row["value"] = v2
+                                        renderer._set_by_path(renderer.config_data, row["path"], v2)
+                                        renderer.menu_message = clamp_msg or ""
                                     except Exception:
                                         renderer.menu_message = "值解析失败：请检查类型。"
                                     renderer.config_editing = False
