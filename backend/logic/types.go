@@ -40,14 +40,15 @@ type Player struct {
 	Pos       Vector2 `json:"pos"`
 	// LookDir is the player's facing / vision direction as a unit vector.
 	// It is used for AOI / Fog of War cone visibility.
-	LookDir    Vector2 `json:"look_dir"`
-	HP         float64 `json:"hp"`
-	MaxHP      float64 `json:"max_hp"`
-	MoveSpeed  float64 `json:"move_speed"`
-	ViewRadius float64 `json:"view_radius"`
-	HearRadius float64 `json:"hear_radius"`
-	IsAlive    bool    `json:"is_alive"`
-	Tactic     string  `json:"tactic"`
+	LookDir      Vector2 `json:"look_dir"`
+	HP           float64 `json:"hp"`
+	MaxHP        float64 `json:"max_hp"`
+	MoveSpeed    float64 `json:"move_speed"`
+	ViewRadius   float64 `json:"view_radius"`
+	HearRadius   float64 `json:"hear_radius"`
+	IsAlive      bool    `json:"is_alive"`
+	DeathHandled bool    `json:"-"`
+	Tactic       string  `json:"tactic"`
 
 	InventoryCap int `json:"inventory_cap"`
 
@@ -59,7 +60,13 @@ type Player struct {
 	TargetDir                Vector2  `json:"-"`
 	Inventory                []Item   `json:"inventory"`
 	ShopStock                []string `json:"shop_stock"`
+	ShopPrices               []int    `json:"shop_prices,omitempty"`
+	ShopTypes                []string `json:"shop_types,omitempty"`
 	ShopFreeRefreshUsedPhase int      `json:"-"`
+
+	// ClientMsg is an ephemeral message intended for the owning client UI only.
+	// It should not be used for global announcements.
+	ClientMsg string `json:"client_msg,omitempty"`
 
 	// Timed buffs (server-authoritative). These are not serialized to clients.
 	BuffSpeedMult            float64   `json:"-"`

@@ -65,6 +65,11 @@
     - **实体**仅在“扇形内且无遮挡”时可见
 - 服务端也会按同样规则做 AOI 过滤，只下发可见实体，避免信息泄露
 
+> 负重联动（已接入配置）：
+> - `gameplay.weight_threshold_view_reduce`：超过阈值后视野半径开始缩小
+> - `gameplay.weight_threshold_noise_double`：超过阈值后移动噪音半径翻倍（更容易被听到）
+> - `gameplay.weight_threshold_immobilize`：达到阈值后无法进行交互（如破译电机/撤离）
+
 ---
 
 ## 4. 阶段流程（Phase 1~3）
@@ -79,16 +84,20 @@
 
 - 进入条件：Phase 1 倒计时结束
 - 刷新：电机（Motors）与阶段补给
-- 胜负推动：修复电机累计达到阈值（当前实现为 2 台）会进入撤离阶段
+- 结束条件：**倒计时结束** 或 **修复电机数达到阈值**（二者取先到者）进入撤离阶段
+    - 阶段倒计时：`phases.phase_2_conflict.duration_sec`
+    - 电机总数：`phases.phase_2_conflict.motors_spawn_count`
+    - 所需修复数：`phases.phase_2_conflict.motors_required_to_open_exit`
+    - 单个电机破译时间：`phases.phase_2_conflict.motor_decipher_time_sec`
 - 脉冲提示：冲突阶段会周期触发“电机脉冲”事件（用于事件提示与雷达提示电机）
 
 ### 4.3 Phase 3：Escape（撤离）
 
-- 进入条件：电机修复达到阈值
+- 进入条件：Phase 2 结束（倒计时到期 或 电机修复达标）
 - 刷新：出口（Exit）与阶段补给
 - 撤离：对出口持续交互 3 秒成功撤离
 
-> 注：配置文件中存在“视野衰减、撤离名额限制”等字段，但当前代码未完整实现；因此本文档不把它们作为既定规则描述。
+> 注：配置文件中存在 `safe_slot_count` 与 Phase3 的 `extraction_* / global_pulse_interval_sec / view_radius_decay_rate_per_sec` 等字段，但当前代码仍未接入；本文档不把它们作为既定规则强描述，避免误导。
 
 ---
 

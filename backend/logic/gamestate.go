@@ -194,10 +194,52 @@ func (gs *GameState) refreshAllPlayersShopStockForPhase(phaseIdx int) {
 		if p == nil {
 			continue
 		}
-		p.ShopStock = gs.generateShopStock(phaseIdx, p.Tactic)
+		gs.refreshShopForPlayer(p, phaseIdx)
 		// New phase => free refresh available again.
 		p.ShopFreeRefreshUsedPhase = 0
 	}
+}
+
+func (gs *GameState) refreshShopForPlayer(p *Player, phaseIdx int) {
+	if p == nil {
+		return
+	}
+	stock := gs.generateShopStock(phaseIdx, p.Tactic)
+	prices := make([]int, 0, len(stock))
+	types := make([]string, 0, len(stock))
+	for _, itemID := range stock {
+		prices = append(prices, gs.shopItemCost(itemID))
+		types = append(types, gs.shopItemType(itemID))
+	}
+	p.ShopStock = stock
+	p.ShopPrices = prices
+	p.ShopTypes = types
+}
+
+func (gs *GameState) shopItemType(itemID string) string {
+	for _, it := range ItemDB {
+		if it.ID == itemID {
+			return it.Type
+		}
+	}
+	return ""
+}
+
+func (gs *GameState) shopItemCost(itemID string) int {
+	// Cost Logic: use item.Value (fallback: 50 * tier)
+	for _, it := range ItemDB {
+		if it.ID == itemID {
+			cost := it.Value
+			if cost <= 0 {
+				cost = 50 * it.Tier
+			}
+			if cost < 0 {
+				cost = 0
+			}
+			return cost
+		}
+	}
+	return 0
 }
 
 func (gs *GameState) HandleDropItem(sessionID string, slotIndex int) {
@@ -287,18 +329,22 @@ func (gs *GameState) HandleBuyItem(sessionID string, itemID string) {
 	}
 
 	if !nearMerchant {
+		p.ClientMsg = "You must be near the Merchant."
 		return
 	}
 
 	// Must be in current shop stock.
 	allowed := false
-	for _, sid := range p.ShopStock {
+	stockIdx := -1
+	for i, sid := range p.ShopStock {
 		if sid == itemID {
 			allowed = true
+			stockIdx = i
 			break
 		}
 	}
 	if !allowed {
+		p.ClientMsg = "Item not available in your shop."
 		return
 	}
 
@@ -316,16 +362,31 @@ func (gs *GameState) HandleBuyItem(sessionID string, itemID string) {
 	}
 
 	if !found {
+		p.ClientMsg = "Unknown item."
 		return
 	}
 
-	// Cost Logic: use item.Value (fallback: 50 * tier)
-	cost := targetItem.Value
+	cost := 0
+	if stockIdx >= 0 && stockIdx < len(p.ShopPrices) {
+		cost = p.ShopPrices[stockIdx]
+	}
 	if cost <= 0 {
-		cost = 50 * targetItem.Tier
+		cost = targetItem.Value
+		if cost <= 0 {
+			cost = 50 * targetItem.Tier
+		}
 	}
 
-	if p.Funds >= cost && len(p.Inventory) < p.InventoryCap {
+	if len(p.Inventory) >= p.InventoryCap {
+		p.ClientMsg = "Inventory is full."
+		return
+	}
+	if p.Funds < cost {
+		p.ClientMsg = fmt.Sprintf("Not enough funds ($%d needed).", cost)
+		return
+	}
+
+	if p.Funds >= cost {
 		p.Funds -= cost
 
 		newItem := targetItem
@@ -333,6 +394,7 @@ func (gs *GameState) HandleBuyItem(sessionID string, itemID string) {
 		p.Inventory = append(p.Inventory, newItem)
 
 		gs.RecalculateStats(p)
+		p.ClientMsg = ""
 		log.Printf("Player %s bought %s for $%d", p.Name, itemID, cost)
 	}
 }
@@ -359,6 +421,7 @@ func (gs *GameState) HandleShopRefresh(sessionID string) {
 		}
 	}
 	if !nearMerchant {
+		p.ClientMsg = "You must be near the Merchant."
 		return
 	}
 
@@ -374,12 +437,14 @@ func (gs *GameState) HandleShopRefresh(sessionID string) {
 			cost = gs.Config.Items.MerchantRefreshCost
 		}
 		if p.Funds < cost {
+			p.ClientMsg = fmt.Sprintf("Not enough funds to refresh ($%d needed).", cost)
 			return
 		}
 		p.Funds -= cost
 	}
 
-	p.ShopStock = gs.generateShopStock(phaseIdx, p.Tactic)
+	gs.refreshShopForPlayer(p, phaseIdx)
+	p.ClientMsg = ""
 }
 
 func (gs *GameState) SetPlayerName(sessionID, name string) {
@@ -578,6 +643,23 @@ func (gs *GameState) RecalculateStats(p *Player) {
 		ratio = 1.0
 	}
 
+	// Overweight view reduce rule.
+	if gs.Config != nil && gs.Config.Gameplay.WeightThresholdViewReduce > 0 {
+		thr := gs.Config.Gameplay.WeightThresholdViewReduce
+		if thr < 1.0 && ratio > thr {
+			// Linearly reduce up to 50% as ratio approaches 1.0.
+			k := (ratio - thr) / (1.0 - thr)
+			if k < 0 {
+				k = 0
+			}
+			if k > 1 {
+				k = 1
+			}
+			reduce := 1.0 - 0.5*k
+			p.ViewRadius *= reduce
+		}
+	}
+
 	// Speed penalty up to 60%
 	p.MoveSpeed = (gs.Config.Gameplay.BaseMoveSpeed * moveMult * speedBuffMult) * (1.0 - ratio*0.6)
 	if p.MoveSpeed < 2.0 {
@@ -667,6 +749,18 @@ func (gs *GameState) HandleInteract(sessionID string) {
 	p, ok := gs.Players[sessionID]
 	if !ok || !p.IsAlive {
 		return
+	}
+
+	// Overweight immobilize rule: if weight ratio exceeds threshold, block interactions (e.g., motor decipher).
+	if gs.Config != nil && gs.Config.Gameplay.WeightThresholdImmobilize > 0 {
+		ratio := 0.0
+		if p.MaxWeight > 0 {
+			ratio = p.Weight / p.MaxWeight
+		}
+		if ratio >= gs.Config.Gameplay.WeightThresholdImmobilize {
+			p.ClientMsg = "Too heavy to interact."
+			return
+		}
 	}
 
 	interactRange := 2.0
@@ -759,14 +853,26 @@ func (gs *GameState) UpdateTick(dt float64) {
 
 			if ent.Type == EntityTypeMotor {
 				data := ent.Extra.(MotorData)
-				data.Progress += 20.0 * dt
+				decipherSec := 20
+				if gs.Config != nil && gs.Config.Phases.Phase2.MotorDecipherTimeSec > 0 {
+					decipherSec = gs.Config.Phases.Phase2.MotorDecipherTimeSec
+				}
+				speed := 100.0 / float64(decipherSec)
+				data.Progress += speed * dt
 				if data.Progress >= data.MaxProgress {
 					data.Progress = data.MaxProgress
 					ent.State = 2
 					gs.MotorsFixed++
 					gs.addEvent("MOTOR_FIXED", "A Motor has been repaired!")
 					p.ChannelingTargetUID = ""
-					if gs.MotorsFixed >= 2 && gs.Phase == PhaseConflict {
+					req := 2
+					if gs.Config != nil {
+						req = gs.Config.Phases.Phase2.MotorsRequiredToOpenExit
+					}
+					if req < 0 {
+						req = 0
+					}
+					if gs.MotorsFixed >= req && gs.Phase == PhaseConflict {
 						gs.startEscapePhase()
 					}
 				}
@@ -866,10 +972,28 @@ func (gs *GameState) UpdateTick(dt float64) {
 func (gs *GameState) nextPhase() {
 	gs.Phase++
 	if gs.Phase == PhaseConflict {
-		gs.PhaseTimer = 9999
+		// Phase 2 ends on whichever comes first:
+		// - the phase timer expires, OR
+		// - enough motors are repaired to open the exit.
+		p2 := 180
+		if gs.Config != nil && gs.Config.Phases.Phase2.Duration > 0 {
+			p2 = gs.Config.Phases.Phase2.Duration
+		}
+		gs.PhaseTimer = float64(p2)
 		gs.PulseTimer = 15.0 // Ensure immediate pulse on start
-		gs.addEvent("PHASE_CHANGE", "Phase 2: Conflict! Fix 2 Motors to escape.")
-		gs.spawnMotors(5)
+		req := 2
+		if gs.Config != nil {
+			req = gs.Config.Phases.Phase2.MotorsRequiredToOpenExit
+		}
+		if req < 0 {
+			req = 0
+		}
+		gs.addEvent("PHASE_CHANGE", fmt.Sprintf("Phase 2: Conflict! Fix %d Motors to escape.", req))
+		mcount := 5
+		if gs.Config != nil && gs.Config.Phases.Phase2.MotorsSpawnCount >= 0 {
+			mcount = gs.Config.Phases.Phase2.MotorsSpawnCount
+		}
+		gs.spawnMotors(mcount)
 		gs.spawnPhaseSupplyDrops(2)
 		gs.spawnOrMoveMerchantForPhase(2)
 		gs.refreshAllPlayersShopStockForPhase(2)
@@ -1042,7 +1166,18 @@ func (gs *GameState) GetSnapshot(sessionID string) map[string]interface{} {
 		isMoving := other.TargetDir.X != 0 || other.TargetDir.Y != 0
 		if isMoving {
 			dist := Distance(p.Pos, other.Pos)
-			if dist <= p.HearRadius {
+			hearRadius := p.HearRadius
+			if gs.Config != nil && gs.Config.Gameplay.WeightThresholdNoiseDouble > 0 {
+				thr := gs.Config.Gameplay.WeightThresholdNoiseDouble
+				ratio := 0.0
+				if other.MaxWeight > 0 {
+					ratio = other.Weight / other.MaxWeight
+				}
+				if ratio >= thr {
+					hearRadius *= 2.0
+				}
+			}
+			if dist <= hearRadius {
 				dir := Vector2{X: other.Pos.X - p.Pos.X, Y: other.Pos.Y - p.Pos.Y}
 				len := math.Sqrt(dir.X*dir.X + dir.Y*dir.Y)
 				if len > 0 {
@@ -1050,7 +1185,7 @@ func (gs *GameState) GetSnapshot(sessionID string) map[string]interface{} {
 					dir.Y /= len
 				}
 
-				intensity := 1.0 - (dist / p.HearRadius)
+				intensity := 1.0 - (dist / hearRadius)
 				if intensity < 0 {
 					intensity = 0
 				}

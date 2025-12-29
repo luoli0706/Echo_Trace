@@ -101,6 +101,18 @@ class Renderer:
         except Exception:
             return obj
 
+    def _item_type_color(self, item_type: str):
+        t = (item_type or "").upper()
+        if t == "OFFENSE":
+            return COLOR_ITEM_OFFENSE
+        if t == "SURVIVAL":
+            return COLOR_ITEM_SURVIVAL
+        if t == "RECON":
+            return COLOR_ITEM_RECON
+        if t == "SCAVENGE":
+            return COLOR_ITEM_SCAVENGE
+        return (255, 255, 255)
+
     def _load_default_config_template(self):
         # Prefer running from repo root (Echo_Trace) where game_config.json lives.
         candidates = [
@@ -663,6 +675,20 @@ class Renderer:
             if ent["type"] == "ITEM_DROP":
                 if "ITEM_DROP" in self.assets: self.screen.blit(self.assets["ITEM_DROP"], tl)
                 else: self.draw_text_centered("📦", sx, sy, (255, 255, 0))
+
+                # Drop hint (colored by Item.type)
+                ex = ent.get("extra")
+                if isinstance(ex, dict):
+                    iid = ex.get("id") or ex.get("ID")
+                    itype = ex.get("type") or ex.get("Type")
+                    if iid:
+                        ab = get_item_abbr(iid)
+                        col = self._item_type_color(str(itype) if itype is not None else "")
+                        try:
+                            s_ab = self.hud_font.render(ab, True, col)
+                            self.screen.blit(s_ab, s_ab.get_rect(center=(sx, sy + half + 10)))
+                        except Exception:
+                            pass
             elif ent["type"] == "SUPPLY_DROP":
                 pygame.draw.circle(self.screen, COLOR_SUPPLY_DROP, (sx, sy), GRID_SIZE, 1)
                 if "SUPPLY_DROP" in self.assets: self.screen.blit(self.assets["SUPPLY_DROP"], tl)
@@ -686,9 +712,30 @@ class Renderer:
                 continue
             sx, sy = self.world_to_screen(p["pos"]["x"], p["pos"]["y"], cam_x, cam_y)
             pygame.draw.circle(self.screen, COLOR_ENEMY, (sx, sy), rd); self.draw_hp_bar(sx-half, sy-half-5, p["hp"], p["max_hp"])
+
+            # Player name (AOI-visible only).
+            nm = p.get("name")
+            if isinstance(nm, str) and nm:
+                nm2 = nm.strip()
+                if len(nm2) > 14:
+                    nm2 = nm2[:14] + "…"
+                try:
+                    ns = self.hud_font.render(nm2, True, (255,255,255))
+                    self.screen.blit(ns, ns.get_rect(center=(sx, sy - half - 14)))
+                except Exception:
+                    pass
         if not getattr(state, "is_extracted", False):
             sx, sy = self.world_to_screen(state.my_pos[0], state.my_pos[1], cam_x, cam_y)
-            pygame.draw.circle(self.screen, COLOR_SELF, (sx, sy), rd); self.draw_text_centered("ME", sx, sy-10); self.draw_hp_bar(sx-half, sy-half-5, state.my_hp, 100)
+            pygame.draw.circle(self.screen, COLOR_SELF, (sx, sy), rd)
+            nm = getattr(state, "my_name", "")
+            if isinstance(nm, str) and nm.strip():
+                nm2 = nm.strip()
+                if len(nm2) > 14:
+                    nm2 = nm2[:14] + "…"
+                self.draw_text_centered(nm2, sx, sy-10)
+            else:
+                self.draw_text_centered("ME", sx, sy-10)
+            self.draw_hp_bar(sx-half, sy-half-5, state.my_hp, 100)
         if not self.dev_mode and not self.spectator_mode:
             # Keep outside-FOV fully black; inside FOV wedge fully visible.
             self.fog_surf.fill((0, 0, 0, 255))
@@ -940,6 +987,17 @@ class Renderer:
         s = self.font.render(f"{p_txt} | {int(state.time_left)}s", True, (255, 255, 0)); self.screen.blit(s, s.get_rect(center=(WINDOW_WIDTH//2, 30)))
         self.screen.blit(self.hud_font.render(self.t("HUD_CONTROLS"), True, (150, 150, 150)), (WINDOW_WIDTH - 300, WINDOW_HEIGHT - 30))
 
+        # Ephemeral toast (server-provided self.client_msg)
+        try:
+            import time as _time
+            now = float(_time.time())
+            if getattr(state, "toast_msg", "") and now < float(getattr(state, "toast_until", 0.0) or 0.0):
+                txt = str(getattr(state, "toast_msg"))
+                ts = self.hud_font.render(txt, True, (255, 120, 120))
+                self.screen.blit(ts, ts.get_rect(center=(WINDOW_WIDTH//2, 62)))
+        except Exception:
+            pass
+
     def draw_minimap(self, state):
         pygame.draw.rect(self.screen, COLOR_RADAR_BG, self.radar_rect, border_radius=10); pygame.draw.rect(self.screen, COLOR_RADAR_BORDER, self.radar_rect, 2, border_radius=10)
         scale = 140.0 / 32.0; ox, oy = self.radar_rect.x + 5, self.radar_rect.y + 5
@@ -973,12 +1031,14 @@ class Renderer:
             r = pygame.Rect(300 + i*60, WINDOW_HEIGHT-70, 50, 50); pygame.draw.rect(self.screen, COLOR_INV_BG, r, border_radius=5)
             if i < len(state.my_inventory):
                 iid = state.my_inventory[i].get("id") or state.my_inventory[i].get("ID")
+                itype = state.my_inventory[i].get("type") or state.my_inventory[i].get("Type")
                 if iid:
                     ab = get_item_abbr(iid)
                 else:
                     name = state.my_inventory[i].get("name", "???")
                     ab = name[:3]
-                self.screen.blit(self.hud_font.render(ab, True, (255,255,255)), (r.x+5, r.y+15))
+                col = self._item_type_color(str(itype) if itype is not None else "")
+                self.screen.blit(self.hud_font.render(ab, True, col), (r.x+5, r.y+15))
 
     def draw_events(self, state):
         y = 100;
@@ -1116,12 +1176,27 @@ class Renderer:
         self.screen.blit(self.font.render(f"{self.t('SHOP_FUNDS')} ${state.funds}", True, (0, 255, 0)), (self.shop_rect.x + 200, self.shop_rect.y + 20))
         items = []
         stock = getattr(state, "shop_stock", []) or []
+        prices = getattr(state, "shop_prices", []) or []
+        types = getattr(state, "shop_types", []) or []
         for iid in stock[:6]:
             items.append((f"{get_item_abbr(iid)} {get_item_name(iid)}", iid))
         y = 70;
         for idx, it in enumerate(items):
             n, pid = it
-            self.screen.blit(self.hud_font.render(f"{idx+1}. {n}", True, (255,255,255)), (self.shop_rect.x+30, self.shop_rect.y+y)); y += 34
+            price = None
+            if idx < len(prices):
+                try:
+                    price = int(prices[idx])
+                except Exception:
+                    price = None
+            line = f"{idx+1}. {n}"
+            if price is not None and price >= 0:
+                line = f"{line}  (${price})"
+            itype = ""
+            if idx < len(types) and isinstance(types[idx], str):
+                itype = types[idx]
+            col = self._item_type_color(itype)
+            self.screen.blit(self.hud_font.render(line, True, col), (self.shop_rect.x+30, self.shop_rect.y+y)); y += 34
         self.screen.blit(self.hud_font.render(self.t("SHOP_HINT"), True, (150, 150, 150)), (self.shop_rect.x+30, self.shop_rect.y+350))
         br = pygame.Rect(self.shop_rect.centerx - 60, self.shop_rect.bottom - 50, 120, 40)
         pygame.draw.rect(self.screen, (200, 50, 50), br, border_radius=5); pygame.draw.rect(self.screen, (255, 255, 255), br, 2, border_radius=5)

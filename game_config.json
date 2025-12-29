@@ -23,7 +23,7 @@
     "inventory_size": 6,
     "_comment_inv": "玩家背包的最大格子数。允许范围: 1-12（超限会被服务端强制截断）。",
     "safe_slot_count": 2,
-    "_comment_safe": "死亡后不掉落的安全格数量。允许范围: 0-4，且不会超过 inventory_size（超限会被服务端强制截断）。",
+    "_comment_safe": "死亡后不掉落的安全格数量。允许范围: 0-4，且不会超过 inventory_size（超限会被服务端强制截断）。【尚未接入：当前死亡掉落仍会按背包全量掉落】",
     "base_move_speed": 4.0,
     "_comment_speed": "玩家的基础移动速度（格/秒 或 单位/秒）。允许范围: 0.5-10.0（超限会被服务端强制截断）。",
     "base_view_radius": 5.0,
@@ -35,11 +35,11 @@
     "base_max_weight": 10.0,
     "_comment_w": "玩家基础最大负重。允许范围: 1.0-50.0（超限会被服务端强制截断）。",
     "weight_threshold_noise_double": 0.5,
-    "_comment_w_noise": "负重超过此比例（0-1）时，移动噪音半径翻倍。允许范围: 0.0-1.0（超限会被服务端强制截断）。",
+    "_comment_w_noise": "负重超过此比例（0-1）时，移动噪音半径翻倍。允许范围: 0.0-1.0（超限会被服务端强制截断）。【已接入】",
     "weight_threshold_view_reduce": 0.8,
-    "_comment_w_view": "负重超过此比例时，视野半径开始缩小。允许范围: 0.0-1.0（超限会被服务端强制截断）。",
+    "_comment_w_view": "负重超过此比例时，视野半径开始缩小。允许范围: 0.0-1.0（超限会被服务端强制截断）。【已接入】",
     "weight_threshold_immobilize": 1.0,
-    "_comment_w_immob": "负重达到此比例时，无法进行交互（如破译）。允许范围: 0.0-1.0（超限会被服务端强制截断）。"
+    "_comment_w_immob": "负重达到此比例时，无法进行交互（如破译）。允许范围: 0.0-1.0（超限会被服务端强制截断）。【已接入】"
   },
   "items": {
     "initial_world_item_count": 15,
@@ -115,23 +115,23 @@
     },
     "phase_2_conflict": {
       "duration_sec": 180,
-      "_comment_p2": "第二阶段（冲突）持续时间（秒）。允许范围: 10-3600（超限会被服务端强制截断）。",
+      "_comment_p2": "第二阶段（冲突）持续时间（秒）。允许范围: 10-3600（超限会被服务端强制截断）。【已接入】",
       "motors_spawn_count": 5,
-      "_comment_motors": "刷新的电机总数。允许范围: 0-50（超限会被服务端强制截断）。",
+      "_comment_motors": "刷新的电机总数。允许范围: 0-50（超限会被服务端强制截断）。【已接入】",
       "motors_required_to_open_exit": 2,
-      "_comment_req": "开启撤离点所需修复的电机数。允许范围: 0-50，且不会超过 motors_spawn_count（超限会被服务端强制截断）。",
+      "_comment_req": "开启撤离点所需修复的电机数。允许范围: 0-50，且不会超过 motors_spawn_count（超限会被服务端强制截断）。【已接入】",
       "motor_decipher_time_sec": 20,
-      "_comment_decipher": "修复单个电机所需的引导时间（秒）。允许范围: 1-120（超限会被服务端强制截断）。"
+      "_comment_decipher": "修复单个电机所需的引导时间（秒）。允许范围: 1-120（超限会被服务端强制截断）。【已接入】"
     },
     "phase_3_escape": {
       "extraction_slots_total": 2,
-      "_comment_slots": "总撤离名额。允许范围: 0-8（超限会被服务端强制截断）。",
+      "_comment_slots": "总撤离名额。允许范围: 0-8（超限会被服务端强制截断）。【尚未接入】",
       "extraction_cooldown_sec": 30,
-      "_comment_cool": "撤离点冷却时间（秒）。允许范围: 0-120（超限会被服务端强制截断）。",
+      "_comment_cool": "撤离点冷却时间（秒）。允许范围: 0-120（超限会被服务端强制截断）。【尚未接入】",
       "global_pulse_interval_sec": 15,
-      "_comment_pulse": "全图雷达脉冲间隔（秒）。允许范围: 1-60（超限会被服务端强制截断）。",
+      "_comment_pulse": "全图雷达脉冲间隔（秒）。允许范围: 1-60（超限会被服务端强制截断）。【尚未接入】",
       "view_radius_decay_rate_per_sec": 0.1,
-      "_comment_decay": "视野衰减速率。允许范围: 0.0-2.0（超限会被服务端强制截断）。"
+      "_comment_decay": "视野衰减速率。允许范围: 0.0-2.0（超限会被服务端强制截断）。【尚未接入】"
     }
   }
 }

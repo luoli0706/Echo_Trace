@@ -9,6 +9,7 @@ class GameState:
         
         # Self State
         self.my_pos = [0, 0]
+        self.my_name = ""
         self.my_hp = 100
         self.view_radius = 5.0
         self.my_inventory = []
@@ -18,6 +19,12 @@ class GameState:
 
         # Merchant
         self.shop_stock = []
+        self.shop_prices = []
+        self.shop_types = []
+
+        # Ephemeral UI toast (from server self.client_msg)
+        self.toast_msg = ""
+        self.toast_until = 0.0
         
         # Global State
         self.phase = 0 # Default Init
@@ -49,6 +56,9 @@ class GameState:
         if "self" in payload:
             s = payload["self"]
             self.self_id = s.get("session_id")
+            nm = s.get("name")
+            if isinstance(nm, str):
+                self.my_name = nm
             self.my_pos = [s["pos"]["x"], s["pos"]["y"]]
             self.my_hp = s["hp"]
             self.view_radius = s["view_radius"]
@@ -59,6 +69,22 @@ class GameState:
             self.inventory_cap = s.get("inventory_cap", 6)
             ss = s.get("shop_stock")
             self.shop_stock = ss if ss is not None else []
+
+            sp = s.get("shop_prices")
+            self.shop_prices = sp if isinstance(sp, list) else []
+
+            st = s.get("shop_types")
+            self.shop_types = st if isinstance(st, list) else []
+
+            msg = s.get("client_msg")
+            if isinstance(msg, str) and msg and msg != self.toast_msg:
+                # Set/update toast; renderer will display it briefly.
+                try:
+                    import time as _time
+                    self.toast_until = float(_time.time()) + 3.0
+                except Exception:
+                    self.toast_until = 0.0
+                self.toast_msg = msg
 
         if "vision" in payload:
             self.players = {}

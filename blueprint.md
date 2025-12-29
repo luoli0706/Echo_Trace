@@ -87,13 +87,13 @@
 - Phase 1（Search）：按配置倒计时结束后进入 Phase 2
 - Phase 2（Conflict）：
   - 刷新电机与补给箱
-  - 需要修复 2 个电机触发撤离阶段
+  - **倒计时结束** 或 **修复电机达到阈值**（二者取先到者）进入 Phase 3（阈值/时长见 `game_config.json`）
   - “电机脉冲”事件会周期性产生（当前用于事件提示与电机雷达提示）
 - Phase 3（Escape）：
   - 刷新出口（Exit），玩家持续交互 3 秒撤离成功
 - Phase 4（Ended）：存在枚举但当前流程主要在撤离后进入观战/或房间结束逻辑
 
-> 注：配置文件里存在“视野衰减、撤离名额限制”等字段，但当前代码未完整实现这些机制；文档不做强描述，避免误导。
+> 注：配置文件里存在 `safe_slot_count` 与 Phase3 的 `extraction_* / global_pulse_interval_sec / view_radius_decay_rate_per_sec` 等字段，但当前代码未完整实现这些机制；文档不做强描述，避免误导。
 
 ---
 
@@ -113,7 +113,10 @@
 
 - `player.weight` 由背包物品重量求和
 - 速度惩罚：负重比例越高，移速越低（当前上限惩罚 60%，最低不低于 2.0）
-- 配置里存在更复杂阈值字段，但当前版本主要使用“比例→速度惩罚”这一条
+- 配置阈值联动（已接入）：
+  - `weight_threshold_view_reduce`：超过阈值后视野半径开始缩小
+  - `weight_threshold_noise_double`：超过阈值后移动噪音半径翻倍（更容易被听到）
+  - `weight_threshold_immobilize`：达到阈值后无法进行交互（如破译电机/撤离）
 
 ### 6.4 “被动道具”已改为限时增益
 

@@ -702,6 +702,14 @@ func (gs *GameState) findNearestEnemy(attacker *Player, rng float64) *Player {
 }
 
 func (gs *GameState) handleDeath(p *Player) {
+	if p == nil {
+		return
+	}
+	if p.DeathHandled {
+		return
+	}
+	p.DeathHandled = true
+
 	for _, item := range p.Inventory {
 		uid := NewUID()
 		ent := Entity{
@@ -714,6 +722,11 @@ func (gs *GameState) handleDeath(p *Player) {
 		gs.Entities[uid] = ent
 	}
 	p.Inventory = []Item{}
+	name := p.Name
+	if name == "" || name == "Unknown" {
+		name = p.SessionID
+	}
+	gs.addEvent("DEATH", fmt.Sprintf("%s 死亡", name))
 	log.Printf("Player %s died.", p.SessionID)
 }
 
