@@ -112,8 +112,10 @@ type GameConfig struct {
 	Server struct {
 		TickRateMs               int  `json:"tick_rate_ms"`
 		MaxPlayers               int  `json:"max_players_per_room"`
+		MinPlayersToStart        int  `json:"min_players_to_start"`
 		WaitForPlayersTimeoutSec int  `json:"wait_for_players_timeout_sec"`
 		DisconnectGraceSec       int  `json:"disconnect_grace_sec"`
+		GlobalEventsMax          int  `json:"global_events_max"`
 		DebugLogColor            bool `json:"debug_log_color"`
 	} `json:"server"`
 	Map struct {
@@ -125,6 +127,11 @@ type GameConfig struct {
 	Gameplay struct {
 		InventorySize              int     `json:"inventory_size"`
 		SafeSlotCount              int     `json:"safe_slot_count"`
+		PlayerCollisionRadius      float64 `json:"player_collision_radius"`
+		InteractRange              float64 `json:"interact_range"`
+		MerchantInteractRange      float64 `json:"merchant_interact_range"`
+		FOVDegrees                 float64 `json:"fov_degrees"`
+		FOVRayCount                int     `json:"fov_ray_count"`
 		BaseMoveSpeed              float64 `json:"base_move_speed"`
 		BaseViewRadius             float64 `json:"base_view_radius"`
 		HearRadius                 float64 `json:"hear_radius"`
@@ -211,8 +218,12 @@ type GameConfig struct {
 			MotorsSpawnCount         int `json:"motors_spawn_count"`
 			MotorsRequiredToOpenExit int `json:"motors_required_to_open_exit"`
 			MotorDecipherTimeSec     int `json:"motor_decipher_time_sec"`
+			PulseIntervalSec         int `json:"pulse_interval_sec"`
+			PulseActiveWindowSec     int `json:"pulse_active_window_sec"`
 		} `json:"phase_2_conflict"`
 		Phase3 struct {
+			DurationSec               int     `json:"duration_sec"`
+			ExtractionChannelTimeSec  float64 `json:"extraction_channel_time_sec"`
 			ExtractionSlotsTotal      int     `json:"extraction_slots_total"`
 			ExtractionCooldownSec     int     `json:"extraction_cooldown_sec"`
 			GlobalPulseIntervalSec    int     `json:"global_pulse_interval_sec"`

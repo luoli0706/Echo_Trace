@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  echo-trace-server:
+    build:
+      context: ../..
+      dockerfile: deploy/server/Dockerfile
+    container_name: echo-trace-server
+    ports:
+      - "9191:9191"
+    restart: unless-stopped
+    environment:
+      - SERVER_PORT=9191
+    volumes:
+      - ../../config:/app/config:ro
+    networks:
+      - echo-trace-network
+
+networks:
+  echo-trace-network:
+    driver: bridge

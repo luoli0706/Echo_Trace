@@ -182,17 +182,23 @@ func (c *Client) handleCreateRoom(payload map[string]interface{}) {
 	// For now, let's just use default config passed from main (we need access to it?)
 	// Or parse parts.
 
-	// Accept client-provided stable session_id for reconnect.
+	// 使用玩家名作为 session_id（特工代号唯一标识）
 	if payload != nil {
-		if sid, ok := payload["session_id"].(string); ok {
-			sid = strings.TrimSpace(sid)
-			if sid != "" {
-				c.SessionID = sid
+		if nm, ok := payload["name"].(string); ok {
+			nm = strings.TrimSpace(nm)
+			if nm != "" {
+				c.PlayerName = nm
+				c.SessionID = "agent_" + nm // 使用特工代号作为 session_id
 			}
 		}
-		if nm, ok := payload["name"].(string); ok {
-			c.PlayerName = strings.TrimSpace(nm)
-		}
+	}
+
+	if c.PlayerName == "" {
+		c.SendJSON(map[string]interface{}{
+			"type":    4001,
+			"payload": map[string]interface{}{"msg": "创建房间失败：必须填写特工代号。"},
+		})
+		return
 	}
 
 	roomName := ""
@@ -270,17 +276,23 @@ func (c *Client) handleJoinRoom(payload map[string]interface{}) {
 		return
 	}
 
-	// Accept client-provided stable session_id for reconnect.
+	// 使用玩家名作为 session_id（特工代号唯一标识）
 	if payload != nil {
-		if sid, ok := payload["session_id"].(string); ok {
-			sid = strings.TrimSpace(sid)
-			if sid != "" {
-				c.SessionID = sid
+		if nm, ok := payload["name"].(string); ok {
+			nm = strings.TrimSpace(nm)
+			if nm != "" {
+				c.PlayerName = nm
+				c.SessionID = "agent_" + nm // 使用特工代号作为 session_id
 			}
 		}
-		if nm, ok := payload["name"].(string); ok {
-			c.PlayerName = strings.TrimSpace(nm)
-		}
+	}
+
+	if c.PlayerName == "" {
+		c.SendJSON(map[string]interface{}{
+			"type":    4001,
+			"payload": map[string]interface{}{"msg": "加入房间失败：必须填写特工代号。"},
+		})
+		return
 	}
 
 	roomID := ""
@@ -299,25 +311,39 @@ func (c *Client) handleJoinRoom(payload map[string]interface{}) {
 	}
 
 	room := GlobalManager.GetRoom(roomID)
-	if room != nil {
-		c.CurrentRoom = room
-		room.Register <- c
-		c.SendJSON(map[string]interface{}{
-			"type": 1012, // ROOM_JOINED
-			"payload": map[string]interface{}{
-				"success":   true,
-				"room_id":   room.ID,
-				"room_name": room.Name,
-				"config":    room.Config,
-			},
-		})
-	} else {
-		// Error
+	if room == nil {
 		c.SendJSON(map[string]interface{}{
 			"type":    4001,
 			"payload": map[string]interface{}{"msg": "加入房间失败：房间不存在或已关闭。"},
 		})
+		return
 	}
+
+	// 检查特工代号是否已被占用
+	room.Mutex.Lock()
+	for existingClient := range room.Clients {
+		if existingClient.PlayerName == c.PlayerName && existingClient != c {
+			room.Mutex.Unlock()
+			c.SendJSON(map[string]interface{}{
+				"type":    4001,
+				"payload": map[string]interface{}{"msg": "加入房间失败：该特工代号已被其他玩家使用。"},
+			})
+			return
+		}
+	}
+	room.Mutex.Unlock()
+
+	c.CurrentRoom = room
+	room.Register <- c
+	c.SendJSON(map[string]interface{}{
+		"type": 1012, // ROOM_JOINED
+		"payload": map[string]interface{}{
+			"success":   true,
+			"room_id":   room.ID,
+			"room_name": room.Name,
+			"config":    room.Config,
+		},
+	})
 }
 
 func (c *Client) handleListRooms() {

@@ -1,0 +1,36 @@
+{
+  "phases": {
+    "phase_1_search": {
+      "duration_sec": 120,
+      "_comment_p1": "第一阶段（搜寻）持续时间（秒）。允许范围: 10-3600（超限会被服务端强制截断）。"
+    },
+    "phase_2_conflict": {
+      "duration_sec": 180,
+      "_comment_p2": "第二阶段（冲突）持续时间（秒）。允许范围: 10-3600（超限会被服务端强制截断）。【已接入】",
+      "motors_spawn_count": 5,
+      "_comment_motors": "刷新的电机总数。允许范围: 0-50（超限会被服务端强制截断）。【已接入】",
+      "motors_required_to_open_exit": 2,
+      "_comment_req": "开启撤离点所需修复的电机数。允许范围: 0-50，且不会超过 motors_spawn_count（超限会被服务端强制截断）。【已接入】",
+      "motor_decipher_time_sec": 20,
+      "_comment_decipher": "修复单个电机所需的引导时间（秒）。允许范围: 1-120（超限会被服务端强制截断）。【已接入】",
+      "pulse_interval_sec": 15,
+      "_comment_pulse_i": "冲突阶段“电机脉冲”间隔（秒）。允许范围: 1-60（超限会被服务端强制截断）。【已接入】",
+      "pulse_active_window_sec": 5,
+      "_comment_pulse_w": "每次脉冲生效的持续窗口（秒），在该窗口内雷达会显示电机点位。允许范围: 0-60，且不会超过 pulse_interval_sec（超限会被服务端强制截断）。【已接入】"
+    },
+    "phase_3_escape": {
+      "duration_sec": 120,
+      "_comment_p3": "第三阶段（撤离）持续时间（秒）。允许范围: 10-3600（超限会被服务端强制截断）。【已接入】",
+      "extraction_channel_time_sec": 3.0,
+      "_comment_extract": "撤离点交互引导时间（秒）。允许范围: 0.5-30.0（超限会被服务端强制截断）。【已接入】",
+      "extraction_slots_total": 2,
+      "_comment_slots": "总撤离名额。允许范围: 0-8（超限会被服务端强制截断）。【尚未接入】",
+      "extraction_cooldown_sec": 30,
+      "_comment_cool": "撤离点冷却时间（秒）。允许范围: 0-120（超限会被服务端强制截断）。【尚未接入】",
+      "global_pulse_interval_sec": 15,
+      "_comment_pulse": "全图雷达脉冲间隔（秒）。允许范围: 1-60（超限会被服务端强制截断）。【尚未接入】",
+      "view_radius_decay_rate_per_sec": 0.1,
+      "_comment_decay": "视野衰减速率。允许范围: 0.0-2.0（超限会被服务端强制截断）。【尚未接入】"
+    }
+  }
+}

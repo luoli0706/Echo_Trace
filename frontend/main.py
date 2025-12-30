@@ -159,8 +159,6 @@ def main():
                             rid = renderer.rooms[renderer.room_list_selected].get("room_id")
                             if rid and net:
                                 payload = {"room_id": rid}
-                                if persisted_session_id:
-                                    payload["session_id"] = persisted_session_id
                                 if persisted_name:
                                     payload["name"] = persisted_name
                                 net.send({"type": 1011, "payload": payload})
@@ -179,8 +177,6 @@ def main():
                                 rid = renderer.rooms[idx].get("room_id")
                                 if rid:
                                     payload = {"room_id": rid}
-                                    if persisted_session_id:
-                                        payload["session_id"] = persisted_session_id
                                     if persisted_name:
                                         payload["name"] = persisted_name
                                     net.send({"type": 1011, "payload": payload})
@@ -203,14 +199,16 @@ def main():
                             renderer.menu_message = ""
                             if net:
                                 payload = {"room_name": rn, "config": renderer.config_data}
-                                if persisted_session_id:
-                                    payload["session_id"] = persisted_session_id
                                 if persisted_name:
                                     payload["name"] = persisted_name
                                 net.send({"type": 1010, "payload": payload})
                         continue
                     if renderer.config_back_rect and renderer.config_back_rect.collidepoint(event.pos):
-                        renderer.state = "MENU"
+                        if getattr(renderer, "config_view", "index") == "edit":
+                            renderer._set_config_index_rows()
+                            renderer.config_focus = "table"
+                        else:
+                            renderer.state = "MENU"
                         continue
 
                     # Select row
@@ -220,6 +218,13 @@ def main():
                             renderer.config_selected = idx
                             renderer.config_editing = False
                             renderer.config_edit_buffer = ""
+
+                            # Index view: click-to-open category
+                            if getattr(renderer, "config_view", "index") == "index":
+                                if idx < len(getattr(renderer, "config_rows", []) or []):
+                                    row = renderer.config_rows[idx]
+                                    if isinstance(row, dict) and row.get("is_section"):
+                                        renderer.open_config_section(row.get("section_key"))
                             break
 
                     # Mouse wheel (older pygame)
@@ -233,7 +238,11 @@ def main():
 
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
-                        renderer.state = "MENU"
+                        if getattr(renderer, "config_view", "index") == "edit":
+                            renderer._set_config_index_rows()
+                            renderer.config_focus = "table"
+                        else:
+                            renderer.state = "MENU"
                         continue
 
                     if event.key == pygame.K_TAB:
@@ -265,7 +274,7 @@ def main():
                             renderer.config_editing = False
                         elif event.key == pygame.K_SPACE:
                             # Toggle bool
-                            if renderer.config_rows and renderer.config_selected < len(renderer.config_rows):
+                            if getattr(renderer, "config_view", "index") == "edit" and renderer.config_rows and renderer.config_selected < len(renderer.config_rows):
                                 row = renderer.config_rows[renderer.config_selected]
                                 if row.get("editable", True) and isinstance(row.get("value"), bool):
                                     v = not bool(row.get("value"))
@@ -285,13 +294,19 @@ def main():
                                     renderer.menu_message = ""
                                     if net:
                                         payload = {"room_name": rn, "config": renderer.config_data}
-                                        if persisted_session_id:
-                                            payload["session_id"] = persisted_session_id
                                         if persisted_name:
                                             payload["name"] = persisted_name
                                         net.send({"type": 1010, "payload": payload})
                             else:
-                                # Start/commit row editing
+                                # Index view: Enter opens selected category
+                                if getattr(renderer, "config_view", "index") == "index":
+                                    if renderer.config_rows and renderer.config_selected < len(renderer.config_rows):
+                                        row = renderer.config_rows[renderer.config_selected]
+                                        if isinstance(row, dict) and row.get("is_section"):
+                                            renderer.open_config_section(row.get("section_key"))
+                                    continue
+
+                                # Edit view: Start/commit row editing
                                 if not renderer.config_rows or renderer.config_selected >= len(renderer.config_rows):
                                     continue
                                 row = renderer.config_rows[renderer.config_selected]
@@ -372,10 +387,16 @@ def main():
                         elif event.key == pygame.K_f:
                             # Merchant Check
                             near_merchant = False
+                            merchant_range = 2.0
+                            try:
+                                cfg = getattr(state, "config", None) or {}
+                                merchant_range = float(cfg.get("gameplay", {}).get("merchant_interact_range", merchant_range))
+                            except Exception:
+                                pass
                             for ent in state.entities:
                                 if ent["type"] == "MERCHANT":
                                     d = ((state.my_pos[0]-ent["pos"]["x"])**2 + (state.my_pos[1]-ent["pos"]["y"])**2)**0.5
-                                    if d <= 2.0: near_merchant = True; break
+                                    if d <= merchant_range: near_merchant = True; break
                             if near_merchant: renderer.show_shop = True
                             elif net: net.send({"type": 2003, "payload": {}}) # Interact
                         

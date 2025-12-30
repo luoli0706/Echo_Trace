@@ -54,6 +54,17 @@ class Renderer:
         self.config_row_rects = []
         self.config_create_rect = None
         self.config_back_rect = None
+        self.config_view = "index"  # index | edit
+        self.config_active_section = None
+        self.config_sections = [
+            ("server", "SERVER"),
+            ("map", "MAP"),
+            ("gameplay", "GAMEPLAY"),
+            ("items", "ITEMS"),
+            ("tactics", "TACTICS"),
+            ("combat", "COMBAT"),
+            ("phases", "PHASES"),
+        ]
         self.show_shop = self.dev_mode = self.spectator_mode = False
         # Pause UI routing stack: ["root" -> "settings"/"help"/"item_manual"].
         self.pause_route = []
@@ -64,6 +75,7 @@ class Renderer:
         self.look_angle = 0.0  # radians
         self.fov_degrees = 90.0
         self.fov_ray_count = 120
+        self._runtime_cfg_applied = False
         # Rendering policy:
         # - Map tiles (including walls) are always rendered.
         # - Fog keeps non-FOV area fully black.
@@ -101,6 +113,24 @@ class Renderer:
         except Exception:
             return obj
 
+    def _wrap_text(self, text: str, max_width: int) -> list:
+        """将文本按像素宽度分行"""
+        words = list(text)  # 中文逐字符处理
+        lines = []
+        current_line = ""
+        for ch in words:
+            test = current_line + ch
+            test_surf = self.hud_font.render(test, True, (255, 255, 255))
+            if test_surf.get_width() <= max_width:
+                current_line = test
+            else:
+                if current_line:
+                    lines.append(current_line)
+                current_line = ch
+        if current_line:
+            lines.append(current_line)
+        return lines
+
     def _item_type_color(self, item_type: str):
         t = (item_type or "").upper()
         if t == "OFFENSE":
@@ -113,51 +143,151 @@ class Renderer:
             return COLOR_ITEM_SCAVENGE
         return (255, 255, 255)
 
+    def _deep_merge(self, dst: dict, src: dict):
+        if not isinstance(dst, dict) or not isinstance(src, dict):
+            return
+        for k, v in src.items():
+            if isinstance(v, dict) and isinstance(dst.get(k), dict):
+                self._deep_merge(dst[k], v)
+            else:
+                dst[k] = v
+
+    def _load_json_file(self, path: str):
+        try:
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+        return {}
+
     def _load_default_config_template(self):
-        # Prefer running from repo root (Echo_Trace) where game_config.json lives.
-        candidates = [
+        # Prefer split configs in ./config/*.json (deep-merged), fallback to legacy game_config.json.
+        order = [
+            "server.json",
+            "map.json",
+            "gameplay.json",
+            "items.json",
+            "tactics.json",
+            "combat.json",
+            "phases.json",
+        ]
+        file_candidates = [
             os.path.join("game_config.json"),
             os.path.join("..", "game_config.json"),
             os.path.join("frontend", "..", "game_config.json"),
         ]
-        for p in candidates:
-            try:
-                if os.path.exists(p):
-                    with open(p, "r", encoding="utf-8") as f:
-                        return json.load(f)
-            except Exception:
-                pass
-        return {}
+        base = {}
+        for p in file_candidates:
+            data = self._load_json_file(p)
+            if data:
+                base = data
+                break
 
-    def _flatten_config(self, obj, prefix=""):
+        dir_candidates = [
+            os.path.join("config"),
+            os.path.join("..", "config"),
+            os.path.join("frontend", "..", "config"),
+        ]
+
+        for d in dir_candidates:
+            if not (os.path.exists(d) and os.path.isdir(d)):
+                continue
+            merged = self._deep_copy(base) if base else {}
+            loaded_any = False
+            for name in order:
+                p = os.path.join(d, name)
+                if not os.path.exists(p):
+                    continue
+                part = self._load_json_file(p)
+                if part:
+                    self._deep_merge(merged, part)
+                    loaded_any = True
+            if loaded_any:
+                return merged
+
+        return base if base else {}
+
+    def _set_config_index_rows(self):
+        self.config_view = "index"
+        self.config_active_section = None
+        self.config_rows = []
+        for key, title in self.config_sections:
+            self.config_rows.append({
+                "path": title,
+                "value": ">",
+                "type": str,
+                "editable": False,
+                "is_section": True,
+                "section_key": key,
+            })
+        self.config_selected = 0
+        self.config_scroll = 0
+        self.config_editing = False
+        self.config_edit_buffer = ""
+
+    def open_config_section(self, section_key: str):
+        section_key = str(section_key or "").strip()
+        if not section_key:
+            return
+        self.config_view = "edit"
+        self.config_active_section = section_key
+        all_rows = self._flatten_config(self.config_data or {})
+        prefix = section_key + "."
+        self.config_rows = [r for r in all_rows if str(r.get("path") or "").startswith(prefix)]
+        self.config_selected = 0
+        self.config_scroll = 0
+        self.config_focus = "table"
+        self.config_editing = False
+        self.config_edit_buffer = ""
+
+    def _flatten_config(self, obj, prefix="", parent_dict=None):
         rows = []
         if isinstance(obj, dict):
+            # 首先收集所有注解 (_comment_* 字段)
+            comments = {}
             for k, v in obj.items():
+                if str(k).startswith("_comment"):
+                    # _comment_xxx => 对应 xxx 字段的注解
+                    suffix = str(k)[8:]  # 移除 "_comment" 前缀
+                    if suffix.startswith("_"):
+                        suffix = suffix[1:]  # 移除前导下划线，如 _comment_tick_rate => tick_rate
+                    comments[suffix] = str(v)
+                    # 顶层 _comment 作为整个section的说明
+                    if not suffix:
+                        comments["_section"] = str(v)
+
+            for k, v in obj.items():
+                # 跳过注解字段，不显示在行中
+                if str(k).startswith("_comment"):
+                    continue
                 path = f"{prefix}.{k}" if prefix else str(k)
                 # Skip containers; leaf-only rows.
                 if isinstance(v, (dict, list)):
-                    rows.extend(self._flatten_config(v, path))
+                    rows.extend(self._flatten_config(v, path, obj if isinstance(v, dict) else None))
                 else:
-                    editable = True
-                    if str(k).startswith("_comment"):
-                        editable = False
+                    # 尝试匹配注解
+                    comment = comments.get(k, "")
                     rows.append({
                         "path": path,
                         "value": v,
                         "type": type(v),
-                        "editable": editable,
+                        "editable": True,
+                        "comment": comment,
                     })
         elif isinstance(obj, list):
             for i, v in enumerate(obj):
                 path = f"{prefix}[{i}]" if prefix else f"[{i}]"
                 if isinstance(v, (dict, list)):
-                    rows.extend(self._flatten_config(v, path))
+                    rows.extend(self._flatten_config(v, path, None))
                 else:
                     rows.append({
                         "path": path,
                         "value": v,
                         "type": type(v),
                         "editable": True,
+                        "comment": "",
                     })
         return rows
 
@@ -206,9 +336,7 @@ class Renderer:
         self.config_edit_buffer = ""
         tmpl = self._load_default_config_template()
         self.config_data = self._deep_copy(tmpl)
-        self.config_rows = self._flatten_config(self.config_data)
-        self.config_selected = 0
-        self.config_scroll = 0
+        self._set_config_index_rows()
 
     def pause_open(self):
         if not self.pause_route:
@@ -647,6 +775,20 @@ class Renderer:
         if self.state == "MENU": self.draw_menu(); return
         if self.state == "CONFIG": self.draw_config(); return
         if self.state == "ROOM_LIST": self.draw_room_list(); return
+
+        # Apply gameplay-tuning config once after joining.
+        if not getattr(self, "_runtime_cfg_applied", False):
+            cfg = getattr(state, "config", None)
+            if isinstance(cfg, dict):
+                gp = cfg.get("gameplay")
+                if isinstance(gp, dict):
+                    fd = gp.get("fov_degrees")
+                    if isinstance(fd, (int, float)) and 30.0 <= float(fd) <= 180.0:
+                        self.fov_degrees = float(fd)
+                    fr = gp.get("fov_ray_count")
+                    if isinstance(fr, (int, float)) and 12 <= int(fr) <= 720:
+                        self.fov_ray_count = int(fr)
+            self._runtime_cfg_applied = True
         self.screen.fill(COLOR_BG)
         if state.phase == 0 and self.state != "PAUSE": self.draw_lobby(state); return
         if getattr(state, "is_extracted", False) and self.spectator_mode:
@@ -668,8 +810,7 @@ class Renderer:
         for ent in state.entities:
             if self.hide_world_entities:
                 continue
-            if not self._is_world_pos_visible(state, ent["pos"]["x"], ent["pos"]["y"]):
-                continue
+            # Server snapshot already applies AOI (FOV + LOS). Client fog will hide out-of-FOV.
             sx, sy = self.world_to_screen(ent["pos"]["x"], ent["pos"]["y"], cam_x, cam_y)
             tl = (sx - half, sy - half)
             if ent["type"] == "ITEM_DROP":
@@ -708,8 +849,7 @@ class Renderer:
         for pid, p in state.players.items():
             if self.hide_world_entities:
                 continue
-            if not self._is_world_pos_visible(state, p["pos"]["x"], p["pos"]["y"]):
-                continue
+            # Server snapshot already applies AOI (FOV + LOS). Client fog will hide out-of-FOV.
             sx, sy = self.world_to_screen(p["pos"]["x"], p["pos"]["y"], cam_x, cam_y)
             pygame.draw.circle(self.screen, COLOR_ENEMY, (sx, sy), rd); self.draw_hp_bar(sx-half, sy-half-5, p["hp"], p["max_hp"])
 
@@ -736,7 +876,8 @@ class Renderer:
             else:
                 self.draw_text_centered("ME", sx, sy-10)
             self.draw_hp_bar(sx-half, sy-half-5, state.my_hp, 100)
-        if not self.dev_mode and not self.spectator_mode:
+        # Fog-of-war overlay. In spectator mode, show full map/world without fog.
+        if not self.dev_mode and not (self.spectator_mode and getattr(state, "is_extracted", False)):
             # Keep outside-FOV fully black; inside FOV wedge fully visible.
             self.fog_surf.fill((0, 0, 0, 255))
             poly = self._compute_fov_polygon_screen(state)
@@ -810,7 +951,11 @@ class Renderer:
 
     def draw_config(self):
         self.screen.fill(COLOR_BG)
-        t = self.font.render(self.t("CONFIG_TITLE"), True, (0, 255, 255))
+        title = self.t("CONFIG_TITLE")
+        if self.config_view == "edit" and self.config_active_section:
+            # Keep it simple and readable without adding new i18n keys.
+            title = f"{title} - {str(self.config_active_section).upper()}"
+        t = self.font.render(title, True, (0, 255, 255))
         self.screen.blit(t, t.get_rect(center=(WINDOW_WIDTH//2, 40)))
         if self.menu_message:
             msg = self.hud_font.render(self.menu_message, True, (255, 120, 120))
@@ -831,8 +976,12 @@ class Renderer:
         table_rect = pygame.Rect(50, 140, WINDOW_WIDTH - 100, 380)
         pygame.draw.rect(self.screen, (35, 35, 45), table_rect)
         pygame.draw.rect(self.screen, (0, 255, 255), table_rect, 1)
-        self.screen.blit(self.hud_font.render("KEY", True, (0, 255, 255)), (table_rect.x + 10, table_rect.y + 8))
-        self.screen.blit(self.hud_font.render("VALUE", True, (0, 255, 255)), (table_rect.x + table_rect.w//2 + 10, table_rect.y + 8))
+        if self.config_view == "index":
+            left_hdr, right_hdr = "CATEGORY", "OPEN"
+        else:
+            left_hdr, right_hdr = "KEY", "VALUE"
+        self.screen.blit(self.hud_font.render(left_hdr, True, (0, 255, 255)), (table_rect.x + 10, table_rect.y + 8))
+        self.screen.blit(self.hud_font.render(right_hdr, True, (0, 255, 255)), (table_rect.x + table_rect.w//2 + 10, table_rect.y + 8))
 
         # Rows
         row_h = 22
@@ -853,7 +1002,7 @@ class Renderer:
             key_s = self.hud_font.render(self.config_rows[idx]["path"], True, key_color)
             self.screen.blit(key_s, (r.x + 6, r.y + 2))
 
-            val = self.config_rows[idx]["value"]
+            val = self.config_rows[idx].get("value")
             if self.config_editing and idx == self.config_selected and self.config_focus == "table":
                 val_s = self.config_edit_buffer + "|"
                 val_color = (255, 255, 0)
@@ -879,14 +1028,30 @@ class Renderer:
         hint = self.hud_font.render(self.t("CONFIG_TABLE_HINT"), True, (150, 150, 150))
         self.screen.blit(hint, (60, 590))
 
-        # Allowed range hint for selected row
-        if self.config_focus == "table" and 0 <= int(self.config_selected) < len(self.config_rows):
+        # 显示选中行的范围提示 + 中文注解（edit模式）
+        if self.config_view == "edit" and self.config_focus == "table" and 0 <= int(self.config_selected) < len(self.config_rows):
             row = self.config_rows[int(self.config_selected)]
+            y_offset = 612
+            # 首先显示范围提示
             if row.get("editable", True):
                 rng = self.config_value_range_hint(str(row.get("path") or ""))
                 if rng:
-                    rng_s = self.hud_font.render(rng, True, (150, 150, 150))
-                    self.screen.blit(rng_s, (60, 612))
+                    rng_s = self.hud_font.render(f"允许范围: {rng}", True, (150, 150, 150))
+                    self.screen.blit(rng_s, (60, y_offset))
+                    y_offset += 20
+            # 然后显示注解
+            comment = row.get("comment", "")
+            if comment:
+                max_width = WINDOW_WIDTH - 120
+                comment_s = self.hud_font.render(comment, True, (180, 220, 255))
+                if comment_s.get_width() > max_width:
+                    lines = self._wrap_text(comment, max_width)
+                    for line in lines[:2]:  # 最多2行注解
+                        line_s = self.hud_font.render(line, True, (180, 220, 255))
+                        self.screen.blit(line_s, (60, y_offset))
+                        y_offset += 18
+                else:
+                    self.screen.blit(comment_s, (60, y_offset))
 
     def draw_room_list(self):
         self.screen.fill(COLOR_BG)

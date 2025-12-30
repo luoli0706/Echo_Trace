@@ -1,0 +1,35 @@
+{
+  "tactics": {
+    "_comment": "战术倾向对初始属性与道具效果的倍率。允许范围: 0.5-2.0（超限会被服务端强制截断）。",
+    "RECON": {
+      "_comment_recon": "侦察型：视野和听力加成，适合信息收集。",
+      "max_hp_mult": 1.0,
+      "move_speed_mult": 1.0,
+      "view_radius_mult": 1.15,
+      "hear_radius_mult": 1.15,
+      "heal_effect_mult": 0.95,
+      "damage_effect_mult": 0.95,
+      "recon_effect_mult": 1.20
+    },
+    "DEFENSE": {
+      "_comment_defense": "防御型：生命值和治疗加成，适合持久作战。",
+      "max_hp_mult": 1.15,
+      "move_speed_mult": 0.98,
+      "view_radius_mult": 0.95,
+      "hear_radius_mult": 1.0,
+      "heal_effect_mult": 1.15,
+      "damage_effect_mult": 0.95,
+      "recon_effect_mult": 0.95
+    },
+    "TRAP": {
+      "_comment_trap": "陷阱型：伤害加成，适合伏击和对抗。",
+      "max_hp_mult": 0.95,
+      "move_speed_mult": 1.02,
+      "view_radius_mult": 1.0,
+      "hear_radius_mult": 1.0,
+      "heal_effect_mult": 0.95,
+      "damage_effect_mult": 1.15,
+      "recon_effect_mult": 1.0
+    }
+  }
+}

@@ -35,8 +35,13 @@ func ClampGameConfig(cfg *GameConfig) {
 	// --- server ---
 	cfg.Server.TickRateMs = clampInt(cfg.Server.TickRateMs, 10, 200)
 	cfg.Server.MaxPlayers = clampInt(cfg.Server.MaxPlayers, 1, 16)
+	cfg.Server.MinPlayersToStart = clampInt(cfg.Server.MinPlayersToStart, 1, 16)
+	if cfg.Server.MinPlayersToStart > cfg.Server.MaxPlayers {
+		cfg.Server.MinPlayersToStart = cfg.Server.MaxPlayers
+	}
 	cfg.Server.WaitForPlayersTimeoutSec = clampInt(cfg.Server.WaitForPlayersTimeoutSec, 5, 300)
 	cfg.Server.DisconnectGraceSec = clampInt(cfg.Server.DisconnectGraceSec, 0, 600)
+	cfg.Server.GlobalEventsMax = clampInt(cfg.Server.GlobalEventsMax, 1, 50)
 
 	// --- map ---
 	cfg.Map.Width = clampInt(cfg.Map.Width, 16, 256)
@@ -51,6 +56,11 @@ func ClampGameConfig(cfg *GameConfig) {
 		cfg.Gameplay.SafeSlotCount = cfg.Gameplay.InventorySize
 	}
 	cfg.Gameplay.BaseMoveSpeed = clampFloat(cfg.Gameplay.BaseMoveSpeed, 0.5, 10.0)
+	cfg.Gameplay.PlayerCollisionRadius = clampFloat(cfg.Gameplay.PlayerCollisionRadius, 0.05, 0.49)
+	cfg.Gameplay.InteractRange = clampFloat(cfg.Gameplay.InteractRange, 0.5, 10.0)
+	cfg.Gameplay.MerchantInteractRange = clampFloat(cfg.Gameplay.MerchantInteractRange, 0.5, 10.0)
+	cfg.Gameplay.FOVDegrees = clampFloat(cfg.Gameplay.FOVDegrees, 30.0, 180.0)
+	cfg.Gameplay.FOVRayCount = clampInt(cfg.Gameplay.FOVRayCount, 12, 720)
 	cfg.Gameplay.BaseViewRadius = clampFloat(cfg.Gameplay.BaseViewRadius, 1.0, 20.0)
 	cfg.Gameplay.HearRadius = clampFloat(cfg.Gameplay.HearRadius, 1.0, 30.0)
 	cfg.Gameplay.BaseMaxHP = clampFloat(cfg.Gameplay.BaseMaxHP, 10.0, 300.0)
@@ -121,7 +131,14 @@ func ClampGameConfig(cfg *GameConfig) {
 		cfg.Phases.Phase2.MotorsRequiredToOpenExit = cfg.Phases.Phase2.MotorsSpawnCount
 	}
 	cfg.Phases.Phase2.MotorDecipherTimeSec = clampInt(cfg.Phases.Phase2.MotorDecipherTimeSec, 1, 120)
+	cfg.Phases.Phase2.PulseIntervalSec = clampInt(cfg.Phases.Phase2.PulseIntervalSec, 1, 60)
+	cfg.Phases.Phase2.PulseActiveWindowSec = clampInt(cfg.Phases.Phase2.PulseActiveWindowSec, 0, 60)
+	if cfg.Phases.Phase2.PulseActiveWindowSec > cfg.Phases.Phase2.PulseIntervalSec {
+		cfg.Phases.Phase2.PulseActiveWindowSec = cfg.Phases.Phase2.PulseIntervalSec
+	}
 
+	cfg.Phases.Phase3.DurationSec = clampInt(cfg.Phases.Phase3.DurationSec, 10, 3600)
+	cfg.Phases.Phase3.ExtractionChannelTimeSec = clampFloat(cfg.Phases.Phase3.ExtractionChannelTimeSec, 0.5, 30.0)
 	cfg.Phases.Phase3.ExtractionSlotsTotal = clampInt(cfg.Phases.Phase3.ExtractionSlotsTotal, 0, 8)
 	cfg.Phases.Phase3.ExtractionCooldownSec = clampInt(cfg.Phases.Phase3.ExtractionCooldownSec, 0, 120)
 	cfg.Phases.Phase3.GlobalPulseIntervalSec = clampInt(cfg.Phases.Phase3.GlobalPulseIntervalSec, 1, 60)

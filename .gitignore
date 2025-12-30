@@ -13,3 +13,10 @@ backend/game.db
 # --- Go build outputs ---
 backend/echo_trace_server
 *.exe
+
+# --- Deploy output (not tracked) ---
+deploy/frontend/*
+deploy/server/*.exe
+!deploy/server/Dockerfile
+!deploy/server/docker-compose.yml
+!deploy/frontend/.gitkeep

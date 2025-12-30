@@ -1,8 +1,7 @@
 package main
 
 import (
-	"encoding/json"
-	"io/ioutil"
+	"flag"
 	"log"
 	"net/http"
 	"path/filepath"
@@ -15,6 +14,10 @@ import (
 var Config logic.GameConfig
 
 func main() {
+	// Parse command line flags
+	port := flag.String("port", "8080", "Server port")
+	flag.Parse()
+
 	// 0. Init Persistence
 	storage.InitDB("./game.db")
 
@@ -22,14 +25,12 @@ func main() {
 	network.InitManager()
 
 	// 1. Load Config (Default)
-	absPath, _ := filepath.Abs("../game_config.json")
-	data, err := ioutil.ReadFile(absPath)
+	rootDir, _ := filepath.Abs("..")
+	cfg, err := logic.LoadDefaultGameConfig(rootDir)
 	if err != nil {
 		log.Fatalf("Error loading config: %v", err)
 	}
-	if err := json.Unmarshal(data, &Config); err != nil {
-		log.Fatalf("Parse config error: %v", err)
-	}
+	Config = cfg
 
 	// Enforce safety bounds on loaded defaults.
 	logic.ClampGameConfig(&Config)
@@ -52,7 +53,7 @@ func main() {
 	})
 
 	// 4. Start Server
-	addr := ":8080"
+	addr := ":" + *port
 	log.Printf("Echo Trace Server listening on %s", addr)
 
 	// Use the mux

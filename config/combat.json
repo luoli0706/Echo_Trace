@@ -1,0 +1,11 @@
+{
+  "combat": {
+    "_comment": "战斗系统相关参数。",
+    "base_attack_damage": 25.0,
+    "_comment_dmg": "基础攻击伤害。允许范围: 1.0-200.0（超限会被服务端强制截断）。",
+    "advanced_recon_duration_sec": 30.0,
+    "_comment_recon": "高级侦察（标记）持续时间（秒）。允许范围: 1.0-120.0（超限会被服务端强制截断）。",
+    "attack_requires_vision": true,
+    "_comment_vision": "攻击是否需要视野（true=必须看到目标才能攻击）。"
+  }
+}

@@ -48,6 +48,14 @@ type GameState struct {
 
 func NewGameState(cfg *GameConfig) *GameState {
 	m := NewGameMap(cfg.Map.Width, cfg.Map.Height, cfg.Map.WallDensity)
+	respawn := 5.0
+	if cfg != nil && cfg.Items.RespawnIntervalSec > 0 {
+		respawn = cfg.Items.RespawnIntervalSec
+	}
+	pulse := 15.0
+	if cfg != nil && cfg.Phases.Phase2.PulseIntervalSec > 0 {
+		pulse = float64(cfg.Phases.Phase2.PulseIntervalSec)
+	}
 	return &GameState{
 		Config:       cfg,
 		Map:          m,
@@ -56,8 +64,8 @@ func NewGameState(cfg *GameConfig) *GameState {
 		AOI:          NewAOIManager(cfg.Map.Width, cfg.Map.Height),
 		Phase:        PhaseInit, // Start in Init Phase
 		PhaseTimer:   float64(cfg.Phases.Phase1.Duration),
-		RespawnTimer: 5.0,
-		PulseTimer:   15.0,
+		RespawnTimer: respawn,
+		PulseTimer:   pulse,
 		GlobalEvents: make([]GlobalEvent, 0),
 		StartTime:    time.Now(),
 	}
@@ -98,8 +106,11 @@ func (gs *GameState) HandleChooseTactic(sessionID, tactic string) bool {
 		}
 	}
 
-	// Start condition: Min players reached (e.g. 1 for debug, 2 for real)
-	minPlayers := 1 // Debug setting
+	// Start condition: Min players reached
+	minPlayers := 1
+	if gs.Config != nil && gs.Config.Server.MinPlayersToStart > 0 {
+		minPlayers = gs.Config.Server.MinPlayersToStart
+	}
 	if readyCount >= minPlayers {
 		gs.StartGame()
 		return true
@@ -114,7 +125,7 @@ func (gs *GameState) StartGame() {
 	gs.addEvent("GAME_START", "The Hunt Begins! Search for supplies.")
 
 	// Spawn Initial Items
-	initial := 20
+	initial := 15
 	if gs.Config != nil && gs.Config.Items.InitialWorldItemCount > 0 {
 		initial = gs.Config.Items.InitialWorldItemCount
 	}
@@ -286,9 +297,13 @@ func (gs *GameState) HandleSellItem(sessionID string, slotIndex int) {
 	}
 
 	// Check Merchant Distance
+	merchantRange := 3.0
+	if gs.Config != nil && gs.Config.Gameplay.MerchantInteractRange > 0 {
+		merchantRange = gs.Config.Gameplay.MerchantInteractRange
+	}
 	nearMerchant := false
 	for _, e := range gs.Entities {
-		if e.Type == EntityTypeMerchant && Distance(p.Pos, e.Pos) <= 3.0 {
+		if e.Type == EntityTypeMerchant && Distance(p.Pos, e.Pos) <= merchantRange {
 			nearMerchant = true
 			break
 		}
@@ -320,9 +335,13 @@ func (gs *GameState) HandleBuyItem(sessionID string, itemID string) {
 	}
 
 	// Check Merchant Distance
+	merchantRange := 3.0
+	if gs.Config != nil && gs.Config.Gameplay.MerchantInteractRange > 0 {
+		merchantRange = gs.Config.Gameplay.MerchantInteractRange
+	}
 	nearMerchant := false
 	for _, e := range gs.Entities {
-		if e.Type == EntityTypeMerchant && Distance(p.Pos, e.Pos) <= 3.0 {
+		if e.Type == EntityTypeMerchant && Distance(p.Pos, e.Pos) <= merchantRange {
 			nearMerchant = true
 			break
 		}
@@ -412,10 +431,14 @@ func (gs *GameState) HandleShopRefresh(sessionID string) {
 		return
 	}
 
-	// Must be near merchant.
+	// Must be near merchant
+	merchantRange := 3.0
+	if gs.Config != nil && gs.Config.Gameplay.MerchantInteractRange > 0 {
+		merchantRange = gs.Config.Gameplay.MerchantInteractRange
+	}
 	nearMerchant := false
 	for _, e := range gs.Entities {
-		if e.Type == EntityTypeMerchant && Distance(p.Pos, e.Pos) <= 3.0 {
+		if e.Type == EntityTypeMerchant && Distance(p.Pos, e.Pos) <= merchantRange {
 			nearMerchant = true
 			break
 		}
@@ -764,6 +787,9 @@ func (gs *GameState) HandleInteract(sessionID string) {
 	}
 
 	interactRange := 2.0
+	if gs.Config != nil && gs.Config.Gameplay.InteractRange > 0 {
+		interactRange = gs.Config.Gameplay.InteractRange
+	}
 	var targetUID = ""
 
 	for uid, e := range gs.Entities {
@@ -780,7 +806,11 @@ func (gs *GameState) HandleInteract(sessionID string) {
 		// If Exit, start extraction timer
 		if gs.Entities[targetUID].Type == EntityTypeExit {
 			p.IsExtracting = true
-			p.ExtractionTimer = 3.0 // 3 seconds
+			extractSec := 3.0
+			if gs.Config != nil && gs.Config.Phases.Phase3.ExtractionChannelTimeSec > 0 {
+				extractSec = gs.Config.Phases.Phase3.ExtractionChannelTimeSec
+			}
+			p.ExtractionTimer = extractSec
 			log.Printf("Player %s started extraction...", sessionID)
 		} else {
 			log.Printf("Player %s started fixing Motor %s", sessionID, targetUID)
@@ -827,7 +857,11 @@ func (gs *GameState) UpdateTick(dt float64) {
 	if gs.Phase == PhaseConflict {
 		gs.PulseTimer -= dt
 		if gs.PulseTimer <= 0 {
-			gs.PulseTimer = 15.0
+			interval := 15.0
+			if gs.Config != nil && gs.Config.Phases.Phase2.PulseIntervalSec > 0 {
+				interval = float64(gs.Config.Phases.Phase2.PulseIntervalSec)
+			}
+			gs.PulseTimer = interval
 			gs.addEvent("MOTOR_PULSE", "Motors are emitting a signal!")
 		}
 	}
@@ -941,8 +975,11 @@ func (gs *GameState) UpdateTick(dt float64) {
 	}
 
 	// 4. Physics
-	// Optimized Collision Radius (0.5) to avoid getting stuck
-	playerRadius := 0.25 // Visual size is 0.5, so radius 0.25 fits nicely
+	// Circle radius used for collision (walls + player-player)
+	playerRadius := 0.25
+	if gs.Config != nil && gs.Config.Gameplay.PlayerCollisionRadius > 0 {
+		playerRadius = gs.Config.Gameplay.PlayerCollisionRadius
+	}
 	// Recompute stats each tick so timed buffs expire correctly and weight penalties stay accurate.
 	for _, p := range gs.Players {
 		if p != nil && p.IsAlive && !p.Disconnected {
@@ -967,6 +1004,86 @@ func (gs *GameState) UpdateTick(dt float64) {
 			p.Pos = gs.ResolveMovement(p.Pos, delta, playerRadius)
 		}
 	}
+	// Resolve player-vs-player overlaps after wall collision.
+	gs.resolvePlayerOverlaps(playerRadius)
+}
+
+func (gs *GameState) resolvePlayerOverlaps(playerRadius float64) {
+	// Simple circle-circle separation. Player count is small (<= max players), so O(n^2) is fine.
+	players := make([]*Player, 0, len(gs.Players))
+	for _, p := range gs.Players {
+		if p == nil || !p.IsAlive || p.Disconnected {
+			continue
+		}
+		players = append(players, p)
+	}
+
+	minDist := playerRadius * 2.0
+	minDist2 := minDist * minDist
+	// A few relaxation iterations makes separation stable.
+	for iter := 0; iter < 3; iter++ {
+		movedAny := false
+		for i := 0; i < len(players); i++ {
+			for j := i + 1; j < len(players); j++ {
+				a := players[i]
+				b := players[j]
+				dx := b.Pos.X - a.Pos.X
+				dy := b.Pos.Y - a.Pos.Y
+				d2 := dx*dx + dy*dy
+				if d2 >= minDist2 {
+					continue
+				}
+
+				// Deterministic direction if perfectly overlapping.
+				if d2 < 1e-9 {
+					if a.SessionID < b.SessionID {
+						dx, dy = 1.0, 0.0
+					} else {
+						dx, dy = -1.0, 0.0
+					}
+					d2 = 1.0
+				}
+
+				d := math.Sqrt(d2)
+				nx := dx / d
+				ny := dy / d
+				push := (minDist - d) * 0.5
+				if push <= 0 {
+					continue
+				}
+
+				newA := Vector2{X: a.Pos.X - nx*push, Y: a.Pos.Y - ny*push}
+				newB := Vector2{X: b.Pos.X + nx*push, Y: b.Pos.Y + ny*push}
+
+				// Avoid pushing into walls. If one side is blocked, push the other more.
+				aBlocked := gs.checkCollision(newA, playerRadius)
+				bBlocked := gs.checkCollision(newB, playerRadius)
+				switch {
+				case !aBlocked && !bBlocked:
+					a.Pos = newA
+					b.Pos = newB
+					movedAny = true
+				case !aBlocked && bBlocked:
+					newA2 := Vector2{X: a.Pos.X - nx*(2.0*push), Y: a.Pos.Y - ny*(2.0*push)}
+					if !gs.checkCollision(newA2, playerRadius) {
+						a.Pos = newA2
+						movedAny = true
+					}
+				case aBlocked && !bBlocked:
+					newB2 := Vector2{X: b.Pos.X + nx*(2.0*push), Y: b.Pos.Y + ny*(2.0*push)}
+					if !gs.checkCollision(newB2, playerRadius) {
+						b.Pos = newB2
+						movedAny = true
+					}
+				default:
+					// Both blocked by walls; leave as-is.
+				}
+			}
+		}
+		if !movedAny {
+			break
+		}
+	}
 }
 
 func (gs *GameState) nextPhase() {
@@ -980,7 +1097,11 @@ func (gs *GameState) nextPhase() {
 			p2 = gs.Config.Phases.Phase2.Duration
 		}
 		gs.PhaseTimer = float64(p2)
-		gs.PulseTimer = 15.0 // Ensure immediate pulse on start
+		interval := 15.0
+		if gs.Config != nil && gs.Config.Phases.Phase2.PulseIntervalSec > 0 {
+			interval = float64(gs.Config.Phases.Phase2.PulseIntervalSec)
+		}
+		gs.PulseTimer = interval // Ensure immediate pulse window on start
 		req := 2
 		if gs.Config != nil {
 			req = gs.Config.Phases.Phase2.MotorsRequiredToOpenExit
@@ -1059,7 +1180,11 @@ func (gs *GameState) spawnPhaseSupplyDrops(phase int) {
 
 func (gs *GameState) startEscapePhase() {
 	gs.Phase = PhaseEscape
-	gs.PhaseTimer = 120
+	dur := 120
+	if gs.Config != nil && gs.Config.Phases.Phase3.DurationSec > 0 {
+		dur = gs.Config.Phases.Phase3.DurationSec
+	}
+	gs.PhaseTimer = float64(dur)
 	gs.addEvent("PHASE_CHANGE", "Phase 3: ESCAPE! The Exit has opened.")
 	gs.spawnExit()
 }
@@ -1091,7 +1216,11 @@ func (gs *GameState) spawnExit() {
 
 func (gs *GameState) addEvent(t, msg string) {
 	gs.GlobalEvents = append(gs.GlobalEvents, GlobalEvent{Type: t, Msg: msg})
-	if len(gs.GlobalEvents) > 5 {
+	cap := 5
+	if gs.Config != nil && gs.Config.Server.GlobalEventsMax > 0 {
+		cap = gs.Config.Server.GlobalEventsMax
+	}
+	if len(gs.GlobalEvents) > cap {
 		gs.GlobalEvents = gs.GlobalEvents[1:]
 	}
 }
@@ -1120,14 +1249,32 @@ func (gs *GameState) GetSnapshot(sessionID string) map[string]interface{} {
 		}
 		visibleEntities = entSlice
 	} else {
-		visiblePlayers, visibleEntities = gs.AOI.GetVisibleEntities(p, gs.Map, gs.Players, entSlice)
+		fov := 90.0
+		if gs.Config != nil && gs.Config.Gameplay.FOVDegrees > 0 {
+			fov = gs.Config.Gameplay.FOVDegrees
+		}
+		visiblePlayers, visibleEntities = gs.AOI.GetVisibleEntities(p, gs.Map, gs.Players, entSlice, fov)
 	}
 
 	// Radar Logic: Calculate Blips
 	radarBlips := make([]Blip, 0)
 
-	// Phase 2: Pulse Motors
-	isPulseActive := gs.Phase == PhaseConflict && gs.PulseTimer > 10.0
+	// Phase 2: Pulse Motors (active window is configurable)
+	pulseActiveWindow := 5.0
+	pulseInterval := 15.0
+	if gs.Config != nil {
+		if gs.Config.Phases.Phase2.PulseActiveWindowSec > 0 {
+			pulseActiveWindow = float64(gs.Config.Phases.Phase2.PulseActiveWindowSec)
+		}
+		if gs.Config.Phases.Phase2.PulseIntervalSec > 0 {
+			pulseInterval = float64(gs.Config.Phases.Phase2.PulseIntervalSec)
+		}
+	}
+	startThreshold := pulseInterval - pulseActiveWindow
+	if startThreshold < 0 {
+		startThreshold = 0
+	}
+	isPulseActive := gs.Phase == PhaseConflict && gs.PulseTimer > startThreshold
 
 	if isPulseActive {
 		for _, e := range gs.Entities {

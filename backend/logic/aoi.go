@@ -19,12 +19,15 @@ func NewAOIManager(width, height int) *AOIManager {
 
 // GetVisibleEntities returns entities within the observer's vision cone and view radius.
 // Vision is blocked by wall tiles (LOS).
-func (aoi *AOIManager) GetVisibleEntities(observer *Player, gameMap *GameMap, allPlayers map[string]*Player, allEntities []Entity) ([]*Player, []Entity) {
+func (aoi *AOIManager) GetVisibleEntities(observer *Player, gameMap *GameMap, allPlayers map[string]*Player, allEntities []Entity, fovDegrees float64) ([]*Player, []Entity) {
 	visiblePlayers := make([]*Player, 0)
 	visibleEntities := make([]Entity, 0)
 
 	// Default cone: 90° total => 45° half-angle.
-	halfAngleRad := math.Pi / 4.0
+	if fovDegrees <= 0 {
+		fovDegrees = 90.0
+	}
+	halfAngleRad := (fovDegrees * math.Pi / 180.0) / 2.0
 	cosHalf := math.Cos(halfAngleRad)
 	look := observer.LookDir
 	lookLen2 := look.X*look.X + look.Y*look.Y
