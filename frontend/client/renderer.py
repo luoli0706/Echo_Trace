@@ -1036,18 +1036,18 @@ class Renderer:
             if row.get("editable", True):
                 rng = self.config_value_range_hint(str(row.get("path") or ""))
                 if rng:
-                    rng_s = self.hud_font.render(f"允许范围: {rng}", True, (150, 150, 150))
+                    rng_s = self.hud_font.render(str(rng), True, (150, 150, 150))
                     self.screen.blit(rng_s, (60, y_offset))
                     y_offset += 20
             # 然后显示注解
             comment = row.get("comment", "")
             if comment:
                 max_width = WINDOW_WIDTH - 120
-                comment_s = self.hud_font.render(comment, True, (180, 220, 255))
+                comment_s = self.hud_font.render(comment, True, (150, 150, 150))
                 if comment_s.get_width() > max_width:
                     lines = self._wrap_text(comment, max_width)
                     for line in lines[:2]:  # 最多2行注解
-                        line_s = self.hud_font.render(line, True, (180, 220, 255))
+                        line_s = self.hud_font.render(line, True, (150, 150, 150))
                         self.screen.blit(line_s, (60, y_offset))
                         y_offset += 18
                 else:

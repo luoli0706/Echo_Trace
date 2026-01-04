@@ -4,32 +4,56 @@
     "RECON": {
       "_comment_recon": "侦察型：视野和听力加成，适合信息收集。",
       "max_hp_mult": 1.0,
+      "_comment_max_hp_mult": "最大生命值倍率（0.5-2.0）。",
       "move_speed_mult": 1.0,
+      "_comment_move_speed_mult": "移动速度倍率（0.5-2.0）。",
       "view_radius_mult": 1.15,
+      "_comment_view_radius_mult": "视野半径倍率（0.5-2.0）。",
       "hear_radius_mult": 1.15,
+      "_comment_hear_radius_mult": "听觉半径倍率（0.5-2.0）。",
       "heal_effect_mult": 0.95,
+      "_comment_heal_effect_mult": "治疗效果倍率（0.5-2.0）。",
       "damage_effect_mult": 0.95,
+      "_comment_damage_effect_mult": "伤害效果倍率（0.5-2.0）。",
       "recon_effect_mult": 1.20
+      ,
+      "_comment_recon_effect_mult": "侦察类道具效果倍率（0.5-2.0）。"
     },
     "DEFENSE": {
       "_comment_defense": "防御型：生命值和治疗加成，适合持久作战。",
       "max_hp_mult": 1.15,
+      "_comment_max_hp_mult": "最大生命值倍率（0.5-2.0）。",
       "move_speed_mult": 0.98,
+      "_comment_move_speed_mult": "移动速度倍率（0.5-2.0）。",
       "view_radius_mult": 0.95,
+      "_comment_view_radius_mult": "视野半径倍率（0.5-2.0）。",
       "hear_radius_mult": 1.0,
+      "_comment_hear_radius_mult": "听觉半径倍率（0.5-2.0）。",
       "heal_effect_mult": 1.15,
+      "_comment_heal_effect_mult": "治疗效果倍率（0.5-2.0）。",
       "damage_effect_mult": 0.95,
+      "_comment_damage_effect_mult": "伤害效果倍率（0.5-2.0）。",
       "recon_effect_mult": 0.95
+      ,
+      "_comment_recon_effect_mult": "侦察类道具效果倍率（0.5-2.0）。"
     },
     "TRAP": {
       "_comment_trap": "陷阱型：伤害加成，适合伏击和对抗。",
       "max_hp_mult": 0.95,
+      "_comment_max_hp_mult": "最大生命值倍率（0.5-2.0）。",
       "move_speed_mult": 1.02,
+      "_comment_move_speed_mult": "移动速度倍率（0.5-2.0）。",
       "view_radius_mult": 1.0,
+      "_comment_view_radius_mult": "视野半径倍率（0.5-2.0）。",
       "hear_radius_mult": 1.0,
+      "_comment_hear_radius_mult": "听觉半径倍率（0.5-2.0）。",
       "heal_effect_mult": 0.95,
+      "_comment_heal_effect_mult": "治疗效果倍率（0.5-2.0）。",
       "damage_effect_mult": 1.15,
+      "_comment_damage_effect_mult": "伤害效果倍率（0.5-2.0）。",
       "recon_effect_mult": 1.0
+      ,
+      "_comment_recon_effect_mult": "侦察类道具效果倍率（0.5-2.0）。"
     }
   }
 }

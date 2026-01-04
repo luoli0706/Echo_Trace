@@ -1,32 +1,61 @@
 {
   "items": {
     "initial_world_item_count": 15,
-    "_comment_init": "开局散落道具数量（整体密度略降低）。允许范围: 0-500（超限会被服务端强制截断）。",
+    "_comment_initial_world_item_count": "开局散落道具数量（整体密度略降低）。允许范围: 0-500（超限会被服务端强制截断）。",
     "respawn_interval_sec": 5.0,
-    "_comment_respawn": "散落道具补充检查间隔（秒）。允许范围: 0.5-30.0（超限会被服务端强制截断）。",
+    "_comment_respawn_interval_sec": "散落道具补充检查间隔（秒）。允许范围: 0.5-30.0（超限会被服务端强制截断）。",
     "max_world_item_count": {
       "phase_1": 60,
+      "_comment_phase_1": "第一阶段世界散落道具上限。允许范围: 0-1000（超限会被服务端强制截断）。",
       "phase_2": 50,
+      "_comment_phase_2": "第二阶段世界散落道具上限。允许范围: 0-1000（超限会被服务端强制截断）。",
       "phase_3": 40
+      ,
+      "_comment_phase_3": "第三阶段世界散落道具上限。允许范围: 0-1000（超限会被服务端强制截断）。"
     },
     "_comment_cap": "各阶段世界中散落道具上限（随阶段降低）。允许范围: 0-1000（超限会被服务端强制截断）。",
     "tier_weights_by_phase": {
-      "phase_1": { "tier_1": 0.70, "tier_2": 0.25, "tier_3": 0.05 },
-      "phase_2": { "tier_1": 0.30, "tier_2": 0.50, "tier_3": 0.20 },
-      "phase_3": { "tier_1": 0.10, "tier_2": 0.40, "tier_3": 0.50 }
+      "phase_1": {
+        "tier_1": 0.70,
+        "_comment_tier_1": "第一阶段 Tier1 出现权重（0.0-1.0）。",
+        "tier_2": 0.25,
+        "_comment_tier_2": "第一阶段 Tier2 出现权重（0.0-1.0）。",
+        "tier_3": 0.05,
+        "_comment_tier_3": "第一阶段 Tier3 出现权重（0.0-1.0）。"
+      },
+      "phase_2": {
+        "tier_1": 0.30,
+        "_comment_tier_1": "第二阶段 Tier1 出现权重（0.0-1.0）。",
+        "tier_2": 0.50,
+        "_comment_tier_2": "第二阶段 Tier2 出现权重（0.0-1.0）。",
+        "tier_3": 0.20,
+        "_comment_tier_3": "第二阶段 Tier3 出现权重（0.0-1.0）。"
+      },
+      "phase_3": {
+        "tier_1": 0.10,
+        "_comment_tier_1": "第三阶段 Tier1 出现权重（0.0-1.0）。",
+        "tier_2": 0.40,
+        "_comment_tier_2": "第三阶段 Tier2 出现权重（0.0-1.0）。",
+        "tier_3": 0.50,
+        "_comment_tier_3": "第三阶段 Tier3 出现权重（0.0-1.0）。"
+      }
     },
     "_comment_tiers": "对应 Items.md 的阶段-Tier 权重矩阵。每个权重允许范围: 0.0-1.0（超限会被服务端强制截断）。",
     "scavenge_share_by_phase": {
       "phase_1": 0.20,
+      "_comment_phase_1": "第一阶段 Scavenge 占比（0.0-1.0）。",
       "phase_2": 0.15,
+      "_comment_phase_2": "第二阶段 Scavenge 占比（0.0-1.0）。",
       "phase_3": 0.10
+      ,
+      "_comment_phase_3": "第三阶段 Scavenge 占比（0.0-1.0）。"
     },
-    "_comment_scav": "搜索类（Scavenge）在不同阶段的占比（P1 高、后期降低）。允许范围: 0.0-1.0（超限会被服务端强制截断）。",
+    "_comment_scavenge_share_by_phase": "搜索类（Scavenge）在不同阶段的占比（P1 高、后期降低）。允许范围: 0.0-1.0（超限会被服务端强制截断）。",
     "tactic_focus_share": 0.50,
-    "_comment_focus": "在非搜索类剩余概率中，战术主类占比（例如 0.5 => 剩余80%里主类40%，其余各20%）。允许范围: 0.0-1.0（超限会被服务端强制截断）。",
+    "_comment_tactic_focus_share": "在非搜索类剩余概率中，战术主类占比（例如 0.5 => 剩余80%里主类40%，其余各20%）。允许范围: 0.0-1.0（超限会被服务端强制截断）。",
     "merchant_stock_size": 6,
-    "_comment_shop_size": "NPC商人每次展示的商品数量（建议6，对应数字键1-6购买）。允许范围: 1-6（超限会被服务端强制截断）。",
+    "_comment_merchant_stock_size": "NPC商人每次展示的商品数量（建议6，对应数字键1-6购买）。允许范围: 1-6（超限会被服务端强制截断）。",
     "merchant_refresh_cost": 120,
-    "_comment_shop_refresh": "每个玩家每阶段首次刷新免费；之后每次刷新消耗的资金。允许范围: 0-10000（超限会被服务端强制截断）。"
+    "_comment_merchant_refresh_cost": "每个玩家每阶段首次刷新免费；之后每次刷新消耗的资金。允许范围: 0-10000（超限会被服务端强制截断）。"
   }
 }

@@ -1,0 +1,18 @@
+.git
+**/.git
+.deploy
+.deploy/**
+deploy
+deploy/**
+
+# Python
+**/__pycache__/
+**/*.pyc
+
+# Go build outputs / DB
+backend/echo_trace_server
+backend/echo_trace_server.exe
+backend/game.db
+
+# Misc
+**/*.log
