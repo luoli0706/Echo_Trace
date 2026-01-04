@@ -4,6 +4,7 @@ import (
 	"flag"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 
 	"echo_trace_server/logic"
@@ -25,7 +26,37 @@ func main() {
 	network.InitManager()
 
 	// 1. Load Config (Default)
-	rootDir, _ := filepath.Abs("..")
+	// In dev we run from ./backend (configs live in ../config),
+	// but in Docker we run from /app (configs live in ./config).
+	wd, _ := os.Getwd()
+	candidates := []string{}
+	if wd != "" {
+		candidates = append(candidates, wd)
+		candidates = append(candidates, filepath.Dir(wd))
+	}
+	if len(candidates) == 0 {
+		candidates = append(candidates, ".")
+	}
+
+	rootDir := ""
+	for _, c := range candidates {
+		abs, err := filepath.Abs(c)
+		if err != nil {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(abs, "config")); err == nil {
+			rootDir = abs
+			break
+		}
+		if _, err := os.Stat(filepath.Join(abs, "game_config.json")); err == nil {
+			rootDir = abs
+			break
+		}
+	}
+	if rootDir == "" {
+		rootDir, _ = filepath.Abs(".")
+	}
+
 	cfg, err := logic.LoadDefaultGameConfig(rootDir)
 	if err != nil {
 		log.Fatalf("Error loading config: %v", err)
