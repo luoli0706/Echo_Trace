@@ -19,6 +19,7 @@ const (
 	InputTactic
 	InputLogin
 	InputDevSkip
+	InputFire
 )
 
 type PlayerInput struct {
@@ -146,5 +147,7 @@ func (gl *GameLoop) handleInput(input PlayerInput) {
 		gs.SetPlayerName(sid, input.Name)
 	case InputDevSkip:
 		gs.HandleDevSkipPhase()
+	case InputFire:
+		gs.HandleFire(sid)
 	}
 }

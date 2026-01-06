@@ -166,6 +166,9 @@ func (c *Client) readPump() {
 		case 2009: // SHOP_REFRESH_REQ
 			input.Type = logic.InputShopRefresh
 			c.CurrentRoom.GameLoop.InputChan <- input
+		case 2010: // FIRE_REQ
+			input.Type = logic.InputFire
+			c.CurrentRoom.GameLoop.InputChan <- input
 		case 9001: // DEV_SKIP_PHASE
 			input.Type = logic.InputDevSkip
 			c.CurrentRoom.GameLoop.InputChan <- input

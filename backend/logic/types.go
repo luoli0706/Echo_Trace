@@ -14,7 +14,17 @@ const (
 	EntityTypeExit       = "EXIT"
 	EntityTypeSupplyDrop = "SUPPLY_DROP"
 	EntityTypeMerchant   = "MERCHANT"
+	EntityTypeProjectile = "PROJECTILE"
 )
+
+type ProjectileData struct {
+	OwnerID     string    `json:"owner_id"`
+	Velocity    Vector2   `json:"velocity"`
+	Damage      float64   `json:"damage"`
+	Radius      float64   `json:"radius"`
+	Lifetime    time.Time `json:"lifetime"`
+	BouncesLeft int       `json:"bounces_left"`
+}
 
 type Entity struct {
 	UID   string      `json:"uid"`
@@ -43,10 +53,15 @@ type Player struct {
 	LookDir      Vector2 `json:"look_dir"`
 	HP           float64 `json:"hp"`
 	MaxHP        float64 `json:"max_hp"`
+	Armor        float64 `json:"armor"`
+	MaxArmor     float64 `json:"max_armor"`
+	Kills        int     `json:"kills"`
 	MoveSpeed    float64 `json:"move_speed"`
 	ViewRadius   float64 `json:"view_radius"`
 	HearRadius   float64 `json:"hear_radius"`
 	IsAlive      bool    `json:"is_alive"`
+	IsDead       bool    `json:"is_dead"`
+	RespawnTimer time.Time `json:"respawn_timer"`
 	DeathHandled bool    `json:"-"`
 	Tactic       string  `json:"tactic"`
 
@@ -68,7 +83,7 @@ type Player struct {
 	// It should not be used for global announcements.
 	ClientMsg string `json:"client_msg,omitempty"`
 
-	// Timed buffs (server-authoritative). These are not serialized to clients.
+	// Timed buffs (server-authoritative).
 	BuffSpeedMult            float64   `json:"-"`
 	BuffSpeedUntil           time.Time `json:"-"`
 	BuffViewBonus            float64   `json:"-"`
@@ -79,11 +94,18 @@ type Player struct {
 	BuffInvCapUntil          time.Time `json:"-"`
 	BuffMaxWeightBonus       float64   `json:"-"`
 	BuffMaxWeightUntil       time.Time `json:"-"`
-	BuffDamageReduction      float64   `json:"-"`
-	BuffDamageReductionUntil time.Time `json:"-"`
-	BuffSilentUntil          time.Time `json:"-"`
-	BuffJammerUntil          time.Time `json:"-"`
-
+	
+	// New Item Buffs
+	BuffInvincibleUntil      time.Time `json:"buff_invincible_until"` // Abs Defense
+	BuffInvisibleUntil       time.Time `json:"buff_invisible_until"`  // Stealth
+	BuffVisionInvertUntil    time.Time `json:"buff_vision_invert_until"` // T2 Recon
+	BuffScanUntil            time.Time `json:"buff_scan_until"` // T3 Recon (user)
+	
+	// Ammo State
+	AmmoType      string    `json:"ammo_type"` // "", "AP", "BOUNCE"
+	AmmoCount     int       `json:"ammo_count"`
+	LastFireTime  time.Time `json:"-"`
+	
 	// Interaction State
 	ChannelingTargetUID string `json:"channeling_target"` // UID of entity being interacted with
 
@@ -206,12 +228,21 @@ type GameConfig struct {
 	} `json:"tactics"`
 	Combat struct {
 		BaseAttackDamage         float64 `json:"base_attack_damage"`
+		BulletDamage             float64 `json:"bullet_damage"`
+		BaseArmor                float64 `json:"base_armor"`
+		ProjectileLifetimeSec    float64 `json:"projectile_lifetime_sec"`
+		ReloadTimeSec            float64 `json:"reload_time_sec"`
+		DefaultBounces           int     `json:"default_bounces"`
 		AdvancedReconDurationSec float64 `json:"advanced_recon_duration_sec"`
 		AttackRequiresVision     bool    `json:"attack_requires_vision"`
 	} `json:"combat"`
 	Phases struct {
-		Phase1 struct {
-			Duration int `json:"duration_sec"`
+		Thresholds struct {
+			Phase2Kills int `json:"phase_2_kills"`
+			Phase3Kills int `json:"phase_3_kills"`
+			EndGameKills int `json:"end_game_kills"`
+		} `json:"thresholds"`
+		Phase1 struct {			Duration int `json:"duration_sec"`
 		} `json:"phase_1_search"`
 		Phase2 struct {
 			Duration                 int `json:"duration_sec"`

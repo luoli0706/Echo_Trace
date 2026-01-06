@@ -505,6 +505,12 @@ class Renderer:
             return clamp_num(value, 1.0, 200.0, is_int=False), msg
         if path == "combat.advanced_recon_duration_sec":
             return clamp_num(value, 1.0, 120.0, is_int=False), msg
+        if path == "combat.projectile_lifetime_sec":
+            return clamp_num(value, 1.0, 30.0, is_int=False), msg
+        if path == "combat.reload_time_sec":
+            return clamp_num(value, 0.05, 5.0, is_int=False), msg
+        if path == "combat.default_bounces":
+            return clamp_num(value, 0, 100, is_int=True), msg
 
         # --- phases ---
         if path == "phases.phase_1_search.duration_sec":
@@ -620,6 +626,12 @@ class Renderer:
             return "允许范围: 1.0-200.0"
         if path == "combat.advanced_recon_duration_sec":
             return "允许范围: 1.0-120.0"
+        if path == "combat.projectile_lifetime_sec":
+            return "允许范围: 1.0-30.0"
+        if path == "combat.reload_time_sec":
+            return "允许范围: 0.05-5.0"
+        if path == "combat.default_bounces":
+            return "允许范围: 0-100"
 
         # --- phases ---
         if path in ("phases.phase_1_search.duration_sec", "phases.phase_2_conflict.duration_sec"):
@@ -851,13 +863,20 @@ class Renderer:
                     if ex: self.draw_bar(tl[0], tl[1]-10, ex.get("progress", 0), ex.get("max_progress", 100), (0, 255, 255))
             elif ent["type"] == "EXIT":
                 pygame.draw.rect(self.screen, COLOR_EXIT, (tl[0], tl[1], GRID_SIZE, GRID_SIZE), 0); self.draw_text_centered("E", sx, sy, (0, 0, 0))
+            elif ent["type"] == "PROJECTILE":
+                # Render projectile as white circle
+                r = 4 # pixel radius
+                pygame.draw.circle(self.screen, (255, 255, 255), (sx, sy), r)
         rd = GRID_SIZE // 4 
         for pid, p in state.players.items():
             if self.hide_world_entities:
                 continue
             # Server snapshot already applies AOI (FOV + LOS). Client fog will hide out-of-FOV.
             sx, sy = self.world_to_screen(p["pos"]["x"], p["pos"]["y"], cam_x, cam_y)
-            pygame.draw.circle(self.screen, COLOR_ENEMY, (sx, sy), rd); self.draw_hp_bar(sx-half, sy-half-5, p["hp"], p["max_hp"])
+            pygame.draw.circle(self.screen, COLOR_ENEMY, (sx, sy), rd)
+            if p.get("armor", 0) > 0:
+                self.draw_armor_bar(sx-half, sy-half-9, p["armor"], p.get("max_armor", 50))
+            self.draw_hp_bar(sx-half, sy-half-5, p["hp"], p["max_hp"])
 
             # Player name (AOI-visible only).
             nm = p.get("name")
@@ -881,11 +900,14 @@ class Renderer:
                 self.draw_text_centered(nm2, sx, sy-10)
             else:
                 self.draw_text_centered("ME", sx, sy-10)
-            self.draw_hp_bar(sx-half, sy-half-5, state.my_hp, 100)
+            if state.my_armor > 0:
+                self.draw_armor_bar(sx-half, sy-half-9, state.my_armor, state.my_max_armor)
+            self.draw_hp_bar(sx-half, sy-half-5, state.my_hp, state.my_max_hp)
         # Fog-of-war overlay. In spectator mode, show full map/world without fog.
         if not self.dev_mode and not (self.spectator_mode and getattr(state, "is_extracted", False)):
-            # Keep outside-FOV fully black; inside FOV wedge fully visible.
-            self.fog_surf.fill((0, 0, 0, 255))
+            # Keep outside-FOV dark; inside FOV wedge fully visible.
+            # Alpha 180 = ~70% opacity
+            self.fog_surf.fill((0, 0, 0, 180))
             poly = self._compute_fov_polygon_screen(state)
             if len(poly) >= 3:
                 pygame.draw.polygon(self.fog_surf, (0, 0, 0, 0), poly)
@@ -893,7 +915,8 @@ class Renderer:
                 pygame.draw.circle(self.fog_surf, (0,0,0,0), (WINDOW_WIDTH//2, WINDOW_HEIGHT//2), int(state.view_radius * GRID_SIZE))
             self.screen.blit(self.fog_surf, (0,0))
         self.draw_hud(state); self.draw_inventory(state); self.draw_events(state); self.draw_minimap(state)
-        if state.my_hp <= 0: self.draw_death_overlay()
+        if state.phase == 4: self.draw_scoreboard(state)
+        elif state.my_hp <= 0: self.draw_death_overlay(state)
         if getattr(state, "is_extracted", False) and not self.spectator_mode: self.draw_spectator_overlay()
         if self.show_shop: self.draw_shop_menu(state)
         if self.state == "PAUSE":
@@ -1161,11 +1184,31 @@ class Renderer:
 
     def draw_hud(self, state):
         y = 10;
-        for t in [f"HP: {state.my_hp:.0f}%", f"CASH: ${state.funds}", f"POS: {int(state.my_pos[0])},{int(state.my_pos[1])}"]:
+        lines = [
+            f"HP: {state.my_hp:.0f}%",
+            f"ARMOR: {state.my_armor:.0f}%",
+            f"KILLS: {state.my_kills}",
+            f"CASH: ${state.funds}",
+            f"POS: {int(state.my_pos[0])},{int(state.my_pos[1])}"
+        ]
+        
+        # Ammo Status
+        ammo_type = getattr(state, "my_ammo_type", "")
+        ammo_count = getattr(state, "my_ammo_count", 0)
+        if ammo_type:
+             lines.insert(3, f"AMMO: {ammo_type} x{ammo_count}")
+
+        for t in lines:
             self.screen.blit(self.hud_font.render(t, True, COLOR_HUD_TEXT), (10, y)); y += 20
         phase_map = {1: self.t("PHASE_SEARCH"), 2: self.t("PHASE_CONFLICT"), 3: self.t("PHASE_ESCAPE"), 4: self.t("PHASE_ENDED")}
         p_txt = phase_map.get(state.phase, self.t("PHASE_INIT"))
-        s = self.font.render(f"{p_txt} | {int(state.time_left)}s", True, (255, 255, 0)); self.screen.blit(s, s.get_rect(center=(WINDOW_WIDTH//2, 30)))
+        
+        # Display global kills in the header if config is available
+        header_txt = f"{p_txt} | {int(state.time_left)}s"
+        if state.total_kills > 0:
+            header_txt = f"{header_txt} | TOTAL KILLS: {state.total_kills}"
+            
+        s = self.font.render(header_txt, True, (255, 255, 0)); self.screen.blit(s, s.get_rect(center=(WINDOW_WIDTH//2, 30)))
         self.screen.blit(self.hud_font.render(self.t("HUD_CONTROLS"), True, (150, 150, 150)), (WINDOW_WIDTH - 300, WINDOW_HEIGHT - 30))
 
         # Ephemeral toast (server-provided self.client_msg)
@@ -1197,6 +1240,12 @@ class Renderer:
     def draw_bar(self, x, y, val, max_val, color):
         pygame.draw.rect(self.screen, (50,50,50), (x, y, GRID_SIZE, 4)); pygame.draw.rect(self.screen, color, (x, y, GRID_SIZE * (val/max_val), 4))
 
+    def draw_armor_bar(self, x, y, armor, max_armor):
+        if max_armor <= 0: return
+        pct = max(0, min(1, armor/max_armor))
+        pygame.draw.rect(self.screen, (40, 40, 40), (x, y, GRID_SIZE, 3))
+        pygame.draw.rect(self.screen, (192, 192, 192), (x, y, GRID_SIZE * pct, 3))
+
     def draw_hp_bar(self, x, y, hp, max_hp):
         pct = max(0, min(1, hp/max_hp)); pygame.draw.rect(self.screen, (100,0,0), (x, y, GRID_SIZE, 4)); pygame.draw.rect(self.screen, (0,255,0), (x, y, GRID_SIZE * pct, 4))
 
@@ -1227,9 +1276,18 @@ class Renderer:
             msg = e.get('msg', '').replace('\x00', '')
             s = self.hud_font.render(f"> {msg}", True, (255,100,255)); self.screen.blit(s, (WINDOW_WIDTH - s.get_width() - 10, y)); y += 20
 
-    def draw_death_overlay(self):
+    def draw_death_overlay(self, state):
         s = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA); s.fill((150, 0, 0, 120)); self.screen.blit(s, (0,0))
-        t = self.font.render(self.t("DEATH_TITLE"), True, (255,255,255)); self.screen.blit(t, t.get_rect(center=(WINDOW_WIDTH//2, WINDOW_HEIGHT//2)))
+        t = self.font.render(self.t("DEATH_TITLE"), True, (255,255,255)); self.screen.blit(t, t.get_rect(center=(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 20)))
+        
+        # Respawn Timer logic depends on how backend sends it. 
+        # For Alpha, we can just show "Respawning..." or try to parse 'respawn_timer' if we synced it.
+        # But syncing 'respawn_timer' (time.Time) to python is complex without formatting.
+        # Let's just show text "Respawning in 5s..." static or rely on HUD events.
+        # Wait, we can estimate it or just say "RESPAWNING...".
+        
+        sub = self.hud_font.render("RESPAWNING SOON...", True, (255, 255, 255))
+        self.screen.blit(sub, sub.get_rect(center=(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 + 20)))
 
     def draw_spectator_overlay(self):
         overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA); overlay.fill((0, 0, 0, 150)); self.screen.blit(overlay, (0,0))
@@ -1239,6 +1297,46 @@ class Renderer:
         for key, rect in self.results_rects.items():
             pygame.draw.rect(self.screen, COLOR_BTN, rect, border_radius=5); pygame.draw.rect(self.screen, (0, 255, 0), rect, 1, border_radius=5)
             s = self.hud_font.render(lbls[key], True, (255, 255, 255)); self.screen.blit(s, s.get_rect(center=rect.center))
+
+    def draw_scoreboard(self, state):
+        overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA); overlay.fill((0, 0, 0, 200)); self.screen.blit(overlay, (0,0))
+        rect = pygame.Rect(WINDOW_WIDTH//2 - 250, 100, 500, 450)
+        pygame.draw.rect(self.screen, COLOR_MENU_BG, rect, border_radius=10)
+        pygame.draw.rect(self.screen, (0, 255, 255), rect, 2, border_radius=10)
+        
+        t = self.font.render("--- SCOREBOARD ---", True, (0, 255, 255))
+        self.screen.blit(t, t.get_rect(center=(WINDOW_WIDTH//2, 140)))
+        
+        # Collect and sort players by kills
+        score_list = []
+        # Add self
+        score_list.append({"name": state.my_name, "kills": state.my_kills, "is_me": True, "alive": state.my_hp > 0})
+        # Add others
+        for p in state.players.values():
+            score_list.append({"name": p.get("name", "Unknown"), "kills": p.get("kills", 0), "is_me": False, "alive": p.get("hp", 0) > 0})
+        
+        score_list.sort(key=lambda x: x["kills"], reverse=True)
+        
+        y = 190
+        header = self.hud_font.render(f"{'RANK':<6} {'NAME':<20} {'KILLS':<10} {'STATUS'}", True, (150, 150, 150))
+        self.screen.blit(header, (rect.x + 40, y))
+        y += 30
+        
+        for i, entry in enumerate(score_list):
+            if i >= 10: break # Show top 10
+            color = (255, 255, 255)
+            if entry["is_me"]: color = (255, 255, 0)
+            status = "ALIVE" if entry["alive"] else "DEAD"
+            row_txt = f"#{i+1:<5} {entry['name']:<20} {entry['kills']:<10} {status}"
+            self.screen.blit(self.hud_font.render(row_txt, True, color), (rect.x + 40, y))
+            y += 25
+            
+        # Back button
+        br = pygame.Rect(WINDOW_WIDTH//2 - 60, rect.bottom - 60, 120, 40)
+        pygame.draw.rect(self.screen, (200, 50, 50), br, border_radius=5)
+        pygame.draw.rect(self.screen, (255, 255, 255), br, 2, border_radius=10)
+        self.screen.blit(self.hud_font.render("QUIT [ESC]", True, (255, 255, 255)), (br.x + 20, br.y + 10))
+        self.results_rects["quit"] = br # Reuse quit rect for simplicity
 
     def draw_settings_menu(self):
         pygame.draw.rect(self.screen, COLOR_MENU_BG, self.settings_rect, border_radius=10); pygame.draw.rect(self.screen, (255,255,255), self.settings_rect, 2, border_radius=10)

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"math"
-	"math/rand"
 	"sync"
 	"time"
 )
@@ -40,6 +39,7 @@ type GameState struct {
 	PulseTimer   float64
 	GlobalEvents []GlobalEvent
 	MotorsFixed  int
+	TotalKills   int
 	Mutex        sync.RWMutex
 
 	// Phase 0 State
@@ -93,6 +93,9 @@ func (gs *GameState) HandleChooseTactic(sessionID, tactic string) bool {
 	// Ensure current HP doesn't exceed new MaxHP.
 	if p.HP > p.MaxHP {
 		p.HP = p.MaxHP
+	}
+	if p.Armor > p.MaxArmor {
+		p.Armor = p.MaxArmor
 	}
 
 	// Add Starting Gear based on Tactic (Example)
@@ -512,6 +515,10 @@ func (gs *GameState) AddPlayer(sessionID string) *Player {
 	if baseMaxWeight <= 0 {
 		baseMaxWeight = 10.0
 	}
+	baseArmor := gs.Config.Combat.BaseArmor
+	if baseArmor <= 0 {
+		baseArmor = 50.0
+	}
 	p := &Player{
 		SessionID:     sessionID,
 		Name:          "Unknown",
@@ -519,6 +526,8 @@ func (gs *GameState) AddPlayer(sessionID string) *Player {
 		LookDir:       Vector2{X: 1, Y: 0},
 		HP:            baseHP,
 		MaxHP:         baseHP,
+		Armor:         baseArmor,
+		MaxArmor:      baseArmor,
 		MoveSpeed:     gs.Config.Gameplay.BaseMoveSpeed,
 		ViewRadius:    gs.Config.Gameplay.BaseViewRadius,
 		HearRadius:    baseHear,
@@ -719,6 +728,219 @@ func (gs *GameState) ProcessExtraction(p *Player) {
 	log.Printf("Player %s extracted. Funds: %d (+%d)", p.Name, p.Funds, lootValue)
 }
 
+func (gs *GameState) HandleFire(sessionID string) {
+	gs.Mutex.Lock()
+	defer gs.Mutex.Unlock()
+
+	p, ok := gs.Players[sessionID]
+	if !ok || !p.IsAlive {
+		return
+	}
+
+	// Check if Phase Shifted (Invincible) -> Cannot Shoot
+	if time.Now().Before(p.BuffInvincibleUntil) {
+		p.ClientMsg = "System Locked (Phase Shift)"
+		return
+	}
+	
+	// Check Invisible -> Shoot breaks invisibility
+	if time.Now().Before(p.BuffInvisibleUntil) {
+		p.BuffInvisibleUntil = time.Time{} // Clear buff
+		p.ClientMsg = "Stealth Broken"
+	}
+
+	// Rate Limit
+	reloadSec := 0.2
+	if gs.Config != nil && gs.Config.Combat.ReloadTimeSec > 0 {
+		reloadSec = gs.Config.Combat.ReloadTimeSec
+	}
+	nextFire := p.LastFireTime.Add(time.Duration(reloadSec * float64(time.Second)))
+	if time.Now().Before(nextFire) {
+		return // Reloading
+	}
+	p.LastFireTime = time.Now()
+
+	// Params
+	speed := 12.0
+	damage := 20.0
+	radius := 0.3
+	if gs.Config != nil {
+		if gs.Config.Combat.BulletDamage > 0 {
+			damage = gs.Config.Combat.BulletDamage
+		}
+	}
+	
+	// Ammo Logic
+	ammoType := p.AmmoType
+	if p.AmmoCount > 0 {
+		p.AmmoCount--
+		if p.AmmoCount <= 0 {
+			p.AmmoType = "" // Revert to normal after using up ammo
+		}
+	} else {
+		ammoType = "" // Normal ammo
+	}
+
+	// RAILGUN: Hitscan, Wall Penetration
+	if ammoType == "RAILGUN" {
+		gs.fireRailgun(p, 75.0) // 75 Damage
+		return
+	}
+
+	// PROJECTILE: Normal, AP, Bounce
+	uid := NewUID()
+	dir := p.LookDir
+	l := math.Sqrt(dir.X*dir.X + dir.Y*dir.Y)
+	if l > 0 {
+		dir.X /= l
+		dir.Y /= l
+	}
+	spawnPos := Vector2{
+		X: p.Pos.X + dir.X*0.6,
+		Y: p.Pos.Y + dir.Y*0.6,
+	}
+	
+	// Modifiers based on AmmoType
+	lifetimeSec := 5.0
+	defaultBounces := 0
+	if gs.Config != nil {
+		if gs.Config.Combat.ProjectileLifetimeSec > 0 {
+			lifetimeSec = gs.Config.Combat.ProjectileLifetimeSec
+		}
+		defaultBounces = gs.Config.Combat.DefaultBounces
+	}
+
+	projData := ProjectileData{
+		OwnerID:     sessionID,
+		Velocity:    Vector2{X: dir.X * speed, Y: dir.Y * speed},
+		Damage:      damage,
+		Radius:      radius,
+		Lifetime:    time.Now().Add(time.Duration(lifetimeSec * float64(time.Second))),
+		BouncesLeft: defaultBounces,
+	}
+	
+	if ammoType == "AP" {
+		projData.Damage = 40 
+	} else if ammoType == "BOUNCE" {
+		projData.Damage = 25
+		projData.BouncesLeft += 100 // Bounce ammo adds lots of bounces
+	}
+
+	gs.Entities[uid] = Entity{
+		UID:   uid,
+		Type:  EntityTypeProjectile,
+		Pos:   spawnPos,
+		State: 1, 
+		Extra: projData,
+	}
+}
+
+func (gs *GameState) fireRailgun(p *Player, damage float64) {
+	// Instant hitscan, infinite range, ignores walls (penetration decay?)
+	// For Alpha: infinite range, hits first target, ignores walls.
+	// Visual: Add a "LASER" event?
+	
+	bestTarget := (*Player)(nil)
+	bestDist := 999.0
+	
+	for _, t := range gs.Players {
+		if t.SessionID == p.SessionID || !t.IsAlive { continue }
+		
+		// Line vs Circle check
+		// P + t*Dir = C
+		// (C - P) dot Dir_perp ... simple distance check to ray
+		toTarget := Vector2{X: t.Pos.X - p.Pos.X, Y: t.Pos.Y - p.Pos.Y}
+		distAlong := toTarget.X*p.LookDir.X + toTarget.Y*p.LookDir.Y
+		if distAlong < 0 { continue } // Behind
+		
+		perpDist2 := (toTarget.X*toTarget.X + toTarget.Y*toTarget.Y) - (distAlong*distAlong)
+		if perpDist2 < 0.5*0.5 { // Hit radius
+			if distAlong < bestDist {
+				bestDist = distAlong
+				bestTarget = t
+			}
+		}
+	}
+	
+	if bestTarget != nil {
+		gs.applyDamageLocked(p, bestTarget, damage)
+		gs.addEvent("RAILGUN", fmt.Sprintf("Railgun fired by %s!", p.Name))
+	} else {
+		gs.addEvent("RAILGUN", fmt.Sprintf("Railgun fired by %s (Miss)", p.Name))
+	}
+}
+
+func (gs *GameState) hasLOS(start, end Vector2) bool {
+	// Simple step-based LOS check
+	dist := Distance(start, end)
+	if dist < 1.0 {
+		return true
+	}
+	steps := int(dist * 2) // Check every 0.5 units
+	for i := 1; i < steps; i++ {
+		t := float64(i) / float64(steps)
+		checkPos := Vector2{
+			X: start.X + (end.X-start.X)*t,
+			Y: start.Y + (end.Y-start.Y)*t,
+		}
+		if !gs.Map.IsWalkable(checkPos.X, checkPos.Y) {
+			return false
+		}
+	}
+	return true
+}
+
+func (gs *GameState) applyDamageLocked(attacker, victim *Player, damage float64) {
+	// Check Invincibility
+	if time.Now().Before(victim.BuffInvincibleUntil) {
+		return // No Damage
+	}
+
+	// Armor reduces damage first
+	if victim.Armor > 0 {
+		if victim.Armor >= damage {
+			victim.Armor -= damage
+			damage = 0
+		} else {
+			damage -= victim.Armor
+			victim.Armor = 0
+		}
+	}
+
+	if damage > 0 {
+		victim.HP -= damage
+	}
+
+	if victim.HP <= 0 {
+		victim.HP = 0
+		victim.IsAlive = false
+		attacker.Kills++
+		gs.TotalKills++
+		gs.addEvent("PLAYER_KILLED", fmt.Sprintf("%s was eliminated by %s!", victim.Name, attacker.Name))
+		gs.checkPhaseThresholds()
+	}
+}
+
+func (gs *GameState) checkPhaseThresholds() {
+	if gs.Config == nil {
+		return
+	}
+	ts := gs.Config.Phases.Thresholds
+	if gs.TotalKills >= ts.EndGameKills && gs.Phase != PhaseEnded {
+		gs.endGame()
+	} else if gs.TotalKills >= ts.Phase3Kills && gs.Phase < PhaseEscape {
+		gs.startEscapePhase()
+	} else if gs.TotalKills >= ts.Phase2Kills && gs.Phase < PhaseConflict {
+		gs.nextPhase()
+	}
+}
+
+func (gs *GameState) endGame() {
+	gs.Phase = PhaseEnded
+	gs.PhaseTimer = 60.0 // 1 minute until room close
+	gs.addEvent("GAME_OVER", "The match has ended! Check the scoreboard.")
+}
+
 func (gs *GameState) HandleDevSkipPhase() {
 	gs.Mutex.Lock()
 	defer gs.Mutex.Unlock()
@@ -818,6 +1040,38 @@ func (gs *GameState) HandleInteract(sessionID string) {
 	}
 }
 
+func (gs *GameState) handleDeath(p *Player) {
+	if p == nil {
+		return
+	}
+	if p.IsDead {
+		return
+	}
+	p.IsAlive = false
+	p.IsDead = true
+	p.RespawnTimer = time.Now().Add(5 * time.Second) // Hardcoded 5s or config
+
+	// Drop Inventory
+	for _, item := range p.Inventory {
+		uid := NewUID()
+		ent := Entity{
+			UID:   uid,
+			Type:  EntityTypeItemDrop,
+			Pos:   p.Pos,
+			State: 1,
+			Extra: item,
+		}
+		gs.Entities[uid] = ent
+	}
+	p.Inventory = []Item{}
+	name := p.Name
+	if name == "" || name == "Unknown" {
+		name = p.SessionID
+	}
+	gs.addEvent("DEATH", fmt.Sprintf("%s 死亡 (5s 后重生)", name))
+	log.Printf("Player %s died. Respawning in 5s...", p.SessionID)
+}
+
 func (gs *GameState) UpdateTick(dt float64) {
 	gs.Mutex.Lock()
 	defer gs.Mutex.Unlock()
@@ -831,13 +1085,24 @@ func (gs *GameState) UpdateTick(dt float64) {
 		now := time.Now()
 		deadline := time.Duration(graceSec) * time.Second
 		for sid, p := range gs.Players {
-			if p == nil {
-				continue
-			}
+			if p == nil { continue }
 			if p.Disconnected && !p.DisconnectedAt.IsZero() && now.Sub(p.DisconnectedAt) > deadline {
 				gs.addEvent("PLAYER_KICK", fmt.Sprintf("%s disconnected too long and was removed.", p.Name))
 				gs.removePlayerLocked(sid)
 			}
+		}
+	}
+	
+	// Respawn Logic
+	now := time.Now()
+	for _, p := range gs.Players {
+		if p.IsDead && now.After(p.RespawnTimer) {
+			p.IsDead = false
+			p.IsAlive = true
+			p.HP = p.MaxHP
+			p.Armor = p.MaxArmor
+			p.Pos = gs.Map.GetRandomSpawnPos()
+			gs.addEvent("RESPAWN", fmt.Sprintf("%s 重返战场!", p.Name))
 		}
 	}
 
@@ -850,6 +1115,12 @@ func (gs *GameState) UpdateTick(dt float64) {
 		gs.PhaseTimer -= dt
 		if gs.PhaseTimer <= 0 {
 			gs.nextPhase()
+		}
+	} else {
+		gs.PhaseTimer -= dt
+		if gs.PhaseTimer <= 0 {
+			// Room close logic could go here, for now just stay at 0
+			gs.PhaseTimer = 0
 		}
 	}
 
@@ -1006,6 +1277,103 @@ func (gs *GameState) UpdateTick(dt float64) {
 	}
 	// Resolve player-vs-player overlaps after wall collision.
 	gs.resolvePlayerOverlaps(playerRadius)
+
+	// 5. Update Projectiles
+	gs.updateProjectiles(dt)
+}
+
+func (gs *GameState) updateProjectiles(dt float64) {
+	toRemove := []string{}
+	now := time.Now()
+
+	for uid, e := range gs.Entities {
+		if e.Type != EntityTypeProjectile {
+			continue
+		}
+
+		data, ok := e.Extra.(ProjectileData)
+		if !ok {
+			toRemove = append(toRemove, uid)
+			continue
+		}
+		
+		// Check Lifetime
+		if now.After(data.Lifetime) {
+			toRemove = append(toRemove, uid)
+			continue
+		}
+
+		// Move
+		nextPos := Vector2{
+			X: e.Pos.X + data.Velocity.X*dt,
+			Y: e.Pos.Y + data.Velocity.Y*dt,
+		}
+
+		// 1. Check Wall Collision (with bounce)
+		if gs.checkCollision(nextPos, data.Radius) {
+			if data.BouncesLeft > 0 {
+				// Calculate Bounce
+				// Try move X
+				hitX := gs.checkCollision(Vector2{X: nextPos.X, Y: e.Pos.Y}, data.Radius)
+				hitY := gs.checkCollision(Vector2{X: e.Pos.X, Y: nextPos.Y}, data.Radius)
+				
+				if hitX {
+					data.Velocity.X = -data.Velocity.X
+				}
+				if hitY {
+					data.Velocity.Y = -data.Velocity.Y
+				}
+				if !hitX && !hitY {
+					// Hit a corner perfectly or glitch? Reverse both to be safe
+					data.Velocity.X = -data.Velocity.X
+					data.Velocity.Y = -data.Velocity.Y
+				}
+				
+				data.BouncesLeft--
+				e.Extra = data
+				// Don't update Pos to nextPos if it's inside wall. 
+				// Just flip velocity. Next frame it will move away.
+				gs.Entities[uid] = e
+				continue
+			} else {
+				// No bounces left, destroy
+				toRemove = append(toRemove, uid)
+				continue
+			}
+		}
+
+		// 2. Check Player Collision
+		hitPlayer := false
+		for _, p := range gs.Players {
+			if !p.IsAlive || p.SessionID == data.OwnerID {
+				continue
+			}
+			// Simple Circle-Circle
+			dist := Distance(nextPos, p.Pos)
+			// Player hit radius approx 0.4
+			if dist < (data.Radius + 0.4) {
+				// Hit!
+				owner, hasOwner := gs.Players[data.OwnerID]
+				if hasOwner {
+					gs.applyDamageLocked(owner, p, data.Damage)
+				}
+				hitPlayer = true
+				break
+			}
+		}
+
+		if hitPlayer {
+			toRemove = append(toRemove, uid)
+		} else {
+			// Update pos
+			e.Pos = nextPos
+			gs.Entities[uid] = e
+		}
+	}
+
+	for _, uid := range toRemove {
+		delete(gs.Entities, uid)
+	}
 }
 
 func (gs *GameState) resolvePlayerOverlaps(playerRadius float64) {
@@ -1300,16 +1668,12 @@ func (gs *GameState) GetSnapshot(sessionID string) map[string]interface{} {
 
 	// Sound Logic (Hearing)
 	soundEvents := make([]map[string]interface{}, 0)
-	now := time.Now()
 	for _, other := range gs.Players {
 		if other.SessionID == sessionID || !other.IsAlive {
 			continue
 		}
-		// Silent buff: do not emit footsteps at all.
-		if now.Before(other.BuffSilentUntil) {
-			continue
-		}
-
+		// Silent buff removed in refactor. Footsteps always emitted unless logic changes.
+		
 		isMoving := other.TargetDir.X != 0 || other.TargetDir.Y != 0
 		if isMoving {
 			dist := Distance(p.Pos, other.Pos)
@@ -1331,17 +1695,10 @@ func (gs *GameState) GetSnapshot(sessionID string) map[string]interface{} {
 					dir.X /= len
 					dir.Y /= len
 				}
-
+				
 				intensity := 1.0 - (dist / hearRadius)
 				if intensity < 0 {
 					intensity = 0
-				}
-
-				// Jammer buff: scramble perceived direction + dampen intensity.
-				if now.Before(other.BuffJammerUntil) {
-					ang := rand.Float64() * 2.0 * math.Pi
-					dir = Vector2{X: math.Cos(ang), Y: math.Sin(ang)}
-					intensity *= 0.25
 				}
 
 				soundEvents = append(soundEvents, map[string]interface{}{
@@ -1354,11 +1711,12 @@ func (gs *GameState) GetSnapshot(sessionID string) map[string]interface{} {
 	}
 
 	return map[string]interface{}{
-		"timestamp": 0,
-		"phase":     gs.Phase,
-		"time_left": gs.PhaseTimer,
-		"events":    gs.GlobalEvents,
-		"self":      p,
+		"timestamp":   0,
+		"phase":       gs.Phase,
+		"time_left":   gs.PhaseTimer,
+		"total_kills": gs.TotalKills,
+		"events":      gs.GlobalEvents,
+		"self":        p,
 		"vision": map[string]interface{}{
 			"players":  visiblePlayers,
 			"entities": visibleEntities,

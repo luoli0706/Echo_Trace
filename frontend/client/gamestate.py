@@ -11,6 +11,12 @@ class GameState:
         self.my_pos = [0, 0]
         self.my_name = ""
         self.my_hp = 100
+        self.my_max_hp = 100
+        self.my_armor = 0
+        self.my_max_armor = 50
+        self.my_kills = 0
+        self.my_ammo_type = ""
+        self.my_ammo_count = 0
         self.view_radius = 5.0
         self.my_inventory = []
         self.inventory_cap = 6
@@ -41,6 +47,7 @@ class GameState:
         # Global
         self.phase = payload.get("phase", 0)
         self.time_left = payload.get("time_left", 0)
+        self.total_kills = payload.get("total_kills", 0)
         evts = payload.get("events")
         self.events = evts if evts is not None else []
         
@@ -61,6 +68,12 @@ class GameState:
                 self.my_name = nm
             self.my_pos = [s["pos"]["x"], s["pos"]["y"]]
             self.my_hp = s["hp"]
+            self.my_max_hp = s.get("max_hp", 100)
+            self.my_armor = s.get("armor", 0)
+            self.my_max_armor = s.get("max_armor", 0)
+            self.my_kills = s.get("kills", 0)
+            self.my_ammo_type = s.get("ammo_type", "")
+            self.my_ammo_count = s.get("ammo_count", 0)
             self.view_radius = s["view_radius"]
             self.funds = s.get("funds", 0)
             self.is_extracted = s.get("is_extracted", False)

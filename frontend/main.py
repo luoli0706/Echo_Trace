@@ -580,6 +580,8 @@ def main():
                                     if d <= merchant_range: near_merchant = True; break
                             if near_merchant: renderer.show_shop = True
                             elif net: net.send({"type": 2003, "payload": {}}) # Interact
+                        elif event.key == pygame.K_SPACE:
+                            if net: net.send({"type": 2010, "payload": {}}) # Fire
                         
                         # Number Keys
                         elif event.key >= pygame.K_1 and event.key <= pygame.K_6:

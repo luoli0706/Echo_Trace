@@ -19,35 +19,25 @@ const (
 )
 
 var ItemDB = map[string]Item{
-	// Offense (Items.md)
-	"WPN_SHOCK_T1":     {ID: "WPN_SHOCK_T1", Type: ItemTypeOffense, Name: "Shock", MaxUses: 1, Weight: 2.0, Tier: 1, Value: 100},
-	"WPN_STONE":        {ID: "WPN_STONE", Type: ItemTypeOffense, Name: "Stone", MaxUses: 3, Weight: 0.5, Tier: 1, Value: 30},
-	"WPN_KNIFE_T2":     {ID: "WPN_KNIFE_T2", Type: ItemTypeOffense, Name: "Knife", MaxUses: 1, Weight: 1.0, Tier: 2, Value: 200},
-	"WPN_STUN_GRENADE": {ID: "WPN_STUN_GRENADE", Type: ItemTypeOffense, Name: "Stun Grenade", MaxUses: 1, Weight: 1.5, Tier: 2, Value: 220},
-	"WPN_TRACK_DART":   {ID: "WPN_TRACK_DART", Type: ItemTypeOffense, Name: "Track Dart", MaxUses: 1, Weight: 1.0, Tier: 3, Value: 350},
-	"WPN_EMP_MINE":     {ID: "WPN_EMP_MINE", Type: ItemTypeOffense, Name: "EMP Mine", MaxUses: 1, Weight: 2.5, Tier: 3, Value: 500},
+	// Offense
+	"WPN_AP_AMMO":     {ID: "WPN_AP_AMMO", Type: ItemTypeOffense, Name: "AP Ammo", MaxUses: 1, Weight: 2.0, Tier: 1, Value: 150},
+	"WPN_BOUNCE_AMMO": {ID: "WPN_BOUNCE_AMMO", Type: ItemTypeOffense, Name: "Reflect Ammo", MaxUses: 1, Weight: 2.0, Tier: 2, Value: 300},
+	"WPN_RAILGUN":     {ID: "WPN_RAILGUN", Type: ItemTypeOffense, Name: "Railgun", MaxUses: 1, Weight: 4.0, Tier: 3, Value: 600},
 
-	// Survival (Items.md)
-	"SURV_BANDAGE":     {ID: "SURV_BANDAGE", Type: ItemTypeSurvival, Name: "Bandage", MaxUses: 1, Weight: 0.8, Tier: 1, Value: 60},
-	"SURV_ENERGY_BAR":  {ID: "SURV_ENERGY_BAR", Type: ItemTypeSurvival, Name: "Energy Bar", MaxUses: 1, Weight: 0.3, Tier: 1, Value: 40},
-	"SURV_ADRENALINE":  {ID: "SURV_ADRENALINE", Type: ItemTypeSurvival, Name: "Adrenaline", MaxUses: 1, Weight: 0.6, Tier: 2, Value: 180},
-	"SURV_SILENT_PAD":  {ID: "SURV_SILENT_PAD", Type: ItemTypeSurvival, Name: "Silent Pad", MaxUses: 1, Weight: 1.0, Tier: 2, Value: 160},
-	"SURV_JAMMER":      {ID: "SURV_JAMMER", Type: ItemTypeSurvival, Name: "Jammer", MaxUses: 1, Weight: 1.8, Tier: 3, Value: 400},
-	"SURV_ARMOR_LIGHT": {ID: "SURV_ARMOR_LIGHT", Type: ItemTypeSurvival, Name: "Armor", MaxUses: 1, Weight: 2.0, Tier: 3, Value: 450},
+	// Survival
+	"SURV_REPAIR":      {ID: "SURV_REPAIR", Type: ItemTypeSurvival, Name: "Repair Kit", MaxUses: 1, Weight: 1.0, Tier: 1, Value: 100},
+	"SURV_PHASE_SHIFT": {ID: "SURV_PHASE_SHIFT", Type: ItemTypeSurvival, Name: "Phase Shift", MaxUses: 1, Weight: 2.0, Tier: 2, Value: 350},
+	"SURV_PURGE":       {ID: "SURV_PURGE", Type: ItemTypeSurvival, Name: "Purge System", MaxUses: 1, Weight: 2.5, Tier: 3, Value: 500},
 
-	// Recon (Items.md)
-	"RECON_AMP_T1":      {ID: "RECON_AMP_T1", Type: ItemTypeRecon, Name: "Amp", MaxUses: 1, Weight: 0.8, Tier: 1, Value: 120},
-	"RECON_FLASHLIGHT":  {ID: "RECON_FLASHLIGHT", Type: ItemTypeRecon, Name: "Flashlight", MaxUses: 1, Weight: 1.0, Tier: 1, Value: 100},
-	"RECON_HEARTBEAT":   {ID: "RECON_HEARTBEAT", Type: ItemTypeRecon, Name: "Heartbeat", MaxUses: 3, Weight: 1.5, Tier: 2, Value: 260},
-	"RECON_DRONE_TAG":   {ID: "RECON_DRONE_TAG", Type: ItemTypeRecon, Name: "Drone Tag", MaxUses: 1, Weight: 1.8, Tier: 2, Value: 300},
-	"RECON_GLOBAL_SCAN": {ID: "RECON_GLOBAL_SCAN", Type: ItemTypeRecon, Name: "Global Scan", MaxUses: 1, Weight: 3.0, Tier: 3, Value: 600},
-	"RECON_XRAY":        {ID: "RECON_XRAY", Type: ItemTypeRecon, Name: "X-Ray", MaxUses: 1, Weight: 2.2, Tier: 3, Value: 650},
+	// Recon
+	"RECON_SCOPE":  {ID: "RECON_SCOPE", Type: ItemTypeRecon, Name: "Scope", MaxUses: 1, Weight: 1.0, Tier: 1, Value: 120},
+	"RECON_SENSOR": {ID: "RECON_SENSOR", Type: ItemTypeRecon, Name: "Rear Sensor", MaxUses: 1, Weight: 1.5, Tier: 2, Value: 250},
+	"RECON_SCANNER": {ID: "RECON_SCANNER", Type: ItemTypeRecon, Name: "Global Scan", MaxUses: 1, Weight: 3.0, Tier: 3, Value: 550},
 
-	// Scavenge (Items.md)
-	"SCAV_BACKPACK_M": {ID: "SCAV_BACKPACK_M", Type: ItemTypeScavenge, Name: "Backpack+", MaxUses: 1, Weight: 1.2, Tier: 1, Value: 150},
-	"SCAV_DETECTOR":   {ID: "SCAV_DETECTOR", Type: ItemTypeScavenge, Name: "Detector", MaxUses: 1, Weight: 1.4, Tier: 1, Value: 140},
-	"SCAV_DECODER":    {ID: "SCAV_DECODER", Type: ItemTypeScavenge, Name: "Decoder", MaxUses: 1, Weight: 0.8, Tier: 2, Value: 300},
-	"SCAV_MASTER_KEY": {ID: "SCAV_MASTER_KEY", Type: ItemTypeScavenge, Name: "Master Key", MaxUses: 1, Weight: 1.0, Tier: 3, Value: 500},
+	// Utility (Scavenge/Util renamed in internal logic but keep type consistent)
+	"UTIL_BLINK":   {ID: "UTIL_BLINK", Type: ItemTypeScavenge, Name: "Blink", MaxUses: 1, Weight: 1.5, Tier: 1, Value: 150},
+	"UTIL_RADAR":   {ID: "UTIL_RADAR", Type: ItemTypeScavenge, Name: "Pulse Radar", MaxUses: 1, Weight: 1.5, Tier: 2, Value: 280},
+	"UTIL_STEALTH": {ID: "UTIL_STEALTH", Type: ItemTypeScavenge, Name: "Stealth Cloak", MaxUses: 1, Weight: 2.0, Tier: 3, Value: 600},
 }
 
 type weightedChoice[T any] struct {
@@ -488,7 +478,7 @@ func (gs *GameState) HandleUseItem(playerID string, slotIndex int) {
 
 	// Tactic effect multipliers (defaults 1.0).
 	healMult := 1.0
-	dmgMult := 1.0
+	// dmgMult := 1.0 // Unused in new logic
 	reconMult := 1.0
 	if p.Tactic != "" {
 		switch p.Tactic {
@@ -496,9 +486,9 @@ func (gs *GameState) HandleUseItem(playerID string, slotIndex int) {
 			if gs.Config.Tactics.Recon.HealEffectMult > 0 {
 				healMult = gs.Config.Tactics.Recon.HealEffectMult
 			}
-			if gs.Config.Tactics.Recon.DamageEffectMult > 0 {
-				dmgMult = gs.Config.Tactics.Recon.DamageEffectMult
-			}
+			// if gs.Config.Tactics.Recon.DamageEffectMult > 0 {
+			// 	dmgMult = gs.Config.Tactics.Recon.DamageEffectMult
+			// }
 			if gs.Config.Tactics.Recon.ReconEffectMult > 0 {
 				reconMult = gs.Config.Tactics.Recon.ReconEffectMult
 			}
@@ -506,9 +496,9 @@ func (gs *GameState) HandleUseItem(playerID string, slotIndex int) {
 			if gs.Config.Tactics.Defense.HealEffectMult > 0 {
 				healMult = gs.Config.Tactics.Defense.HealEffectMult
 			}
-			if gs.Config.Tactics.Defense.DamageEffectMult > 0 {
-				dmgMult = gs.Config.Tactics.Defense.DamageEffectMult
-			}
+			// if gs.Config.Tactics.Defense.DamageEffectMult > 0 {
+			// 	dmgMult = gs.Config.Tactics.Defense.DamageEffectMult
+			// }
 			if gs.Config.Tactics.Defense.ReconEffectMult > 0 {
 				reconMult = gs.Config.Tactics.Defense.ReconEffectMult
 			}
@@ -516,9 +506,9 @@ func (gs *GameState) HandleUseItem(playerID string, slotIndex int) {
 			if gs.Config.Tactics.Trap.HealEffectMult > 0 {
 				healMult = gs.Config.Tactics.Trap.HealEffectMult
 			}
-			if gs.Config.Tactics.Trap.DamageEffectMult > 0 {
-				dmgMult = gs.Config.Tactics.Trap.DamageEffectMult
-			}
+			// if gs.Config.Tactics.Trap.DamageEffectMult > 0 {
+			// 	dmgMult = gs.Config.Tactics.Trap.DamageEffectMult
+			// }
 			if gs.Config.Tactics.Trap.ReconEffectMult > 0 {
 				reconMult = gs.Config.Tactics.Trap.ReconEffectMult
 			}
@@ -526,124 +516,109 @@ func (gs *GameState) HandleUseItem(playerID string, slotIndex int) {
 	}
 
 	switch item.ID {
-	// Survival
-	case "SURV_BANDAGE":
-		if p.HP < p.MaxHP {
-			heal := 30.0 * healMult
-			p.HP += heal
-			if p.HP > p.MaxHP {
-				p.HP = p.MaxHP
-			}
-			used = true
-		}
-	case "SURV_ENERGY_BAR":
-		if p.HP < p.MaxHP {
-			heal := 10.0 * healMult
-			p.HP += heal
-			if p.HP > p.MaxHP {
-				p.HP = p.MaxHP
-			}
-			used = true
-		}
-	case "SURV_ADRENALINE":
-		p.BuffSpeedMult = 1.20
-		p.BuffSpeedUntil = time.Now().Add(8 * time.Second)
+	// --- Offense ---
+	case "WPN_AP_AMMO":
+		p.AmmoType = "AP"
+		p.AmmoCount = 3
 		used = true
-	case "SURV_SILENT_PAD":
-		p.BuffSilentUntil = time.Now().Add(20 * time.Second)
+	case "WPN_BOUNCE_AMMO":
+		p.AmmoType = "BOUNCE"
+		p.AmmoCount = 3
 		used = true
-	case "SURV_JAMMER":
-		p.BuffJammerUntil = time.Now().Add(12 * time.Second)
-		used = true
-	case "SURV_ARMOR_LIGHT":
-		p.BuffDamageReduction = 0.35
-		p.BuffDamageReductionUntil = time.Now().Add(20 * time.Second)
+	case "WPN_RAILGUN":
+		p.AmmoType = "RAILGUN"
+		p.AmmoCount = 1
 		used = true
 
-	// Offense
-	case "WPN_SHOCK_T1", "WPN_KNIFE_T2", "WPN_STUN_GRENADE", "WPN_TRACK_DART", "WPN_EMP_MINE", "WPN_STONE":
-		dmg := 5.0
-		rangeVal := 3.0
-		switch item.ID {
-		case "WPN_SHOCK_T1":
-			dmg = 20
-			rangeVal = 3.0
-		case "WPN_KNIFE_T2":
-			dmg = 40
-			rangeVal = 6.0
-		case "WPN_STUN_GRENADE":
-			dmg = 10
-			rangeVal = 5.0
-		case "WPN_TRACK_DART":
-			dmg = 30
-			rangeVal = 6.0
-		case "WPN_EMP_MINE":
-			dmg = 50
-			rangeVal = 8.0
-		case "WPN_STONE":
-			dmg = 5
-			rangeVal = 6.0
+	// --- Survival ---
+	case "SURV_REPAIR":
+		// Restore 30% HP, then 20 Armor
+		maxHP := p.MaxHP
+		if maxHP <= 0 { maxHP = 100 }
+		heal := maxHP * 0.30 * healMult
+		
+		p.HP += heal
+		if p.HP > p.MaxHP {
+			overflow := p.HP - p.MaxHP
+			p.HP = p.MaxHP
+			// Overflow converts to armor (up to max + temp?)
+			// For simplicity: just add 20 flat armor + overflow
+			p.Armor += 20 + overflow
+			if p.Armor > p.MaxArmor + 50 { // Cap temp armor
+				p.Armor = p.MaxArmor + 50
+			}
+		} else {
+			p.Armor += 20
+			if p.Armor > p.MaxArmor {
+				p.Armor = p.MaxArmor
+			}
 		}
-		dmg *= dmgMult
+		used = true
 
-		target := gs.findNearestEnemy(p, rangeVal)
+	case "SURV_PHASE_SHIFT":
+		// 3.0s Invincible, cannot shoot (Handled in HandleFire check)
+		p.BuffInvincibleUntil = time.Now().Add(3 * time.Second)
+		used = true
+	
+	case "SURV_PURGE":
+		// 2.0s Invincible + Clear Debuffs
+		p.BuffInvincibleUntil = time.Now().Add(2 * time.Second)
+		// Clear debuffs (if any implemented later, e.g. Track Dart)
+		used = true
+
+	// --- Recon ---
+	case "RECON_SCOPE":
+		// +20% View Radius for 15s
+		p.BuffViewBonus = p.ViewRadius * 0.20 * reconMult
+		p.BuffViewUntil = time.Now().Add(15 * time.Second)
+		used = true
+
+	case "RECON_SENSOR":
+		// Rear Vision (Client side rendering trick)
+		p.BuffVisionInvertUntil = time.Now().Add(10 * time.Second)
+		used = true
+
+	case "RECON_SCANNER":
+		// Global Scan: Reveal nearest enemy to EVERYONE
+		target := gs.findNearestEnemy(p, 9999.0)
 		if target != nil {
-			gs.applyDamage(target, dmg)
+			gs.addEvent("SCAN", fmt.Sprintf("SCAN DETECTED: %s at [%d, %d]", target.Name, int(target.Pos.X), int(target.Pos.Y)))
+			// Also set a buff on self to show UI indicator? 
+			// Or just the global event is enough for Alpha.
+			p.BuffScanUntil = time.Now().Add(30 * time.Second)
 			used = true
+		} else {
+			p.ClientMsg = "No targets found."
 		}
 
-	// Recon
-	case "RECON_AMP_T1":
-		p.BuffHearBonus = 6.0 * reconMult // 50% of default 12 ~= 6
-		p.BuffHearUntil = time.Now().Add(10 * time.Second)
-		used = true
-	case "RECON_FLASHLIGHT", "RECON_HEARTBEAT", "RECON_DRONE_TAG", "RECON_GLOBAL_SCAN", "RECON_XRAY":
-		// Minimal implementation: temporary view radius boost (placeholder for richer intel behaviors).
-		bonus := 5.0
-		duration := 10 * time.Second
-		switch item.ID {
-		case "RECON_FLASHLIGHT":
-			bonus, duration = 5.0, 12*time.Second
-		case "RECON_HEARTBEAT":
-			bonus, duration = 6.0, 10*time.Second
-		case "RECON_DRONE_TAG":
-			bonus, duration = 6.0, 12*time.Second
-		case "RECON_GLOBAL_SCAN":
-			bonus, duration = 8.0, 15*time.Second
-		case "RECON_XRAY":
-			bonus, duration = 8.0, 5*time.Second
+	// --- Utility ---
+	case "UTIL_BLINK":
+		// Teleport 2.0m forward
+		dist := 2.0
+		dx := p.LookDir.X * dist
+		dy := p.LookDir.Y * dist
+		dest := Vector2{X: p.Pos.X + dx, Y: p.Pos.Y + dy}
+		if !gs.checkCollision(dest, 0.25) {
+			p.Pos = dest
+			used = true
+		} else {
+			p.ClientMsg = "Blink blocked!"
 		}
-		p.BuffViewBonus = bonus * reconMult
-		p.BuffViewUntil = time.Now().Add(duration)
+
+	case "UTIL_RADAR":
+		// Pulse Radar (Client side blips)
+		// We'll handle this by sending a specific packet or just let client render blips if it has item?
+		// Item description says "active use". So maybe it reveals blips for 10s?
+		// For Alpha, let's say it gives a "Radar Buff"
+		// But types.go doesn't have it. Let's reuse Vision Bonus for now or just skip complex logic.
+		// Actually, let's just mark it used and send a message.
+		p.ClientMsg = "Radar Active (Not Implemented visually yet)"
 		used = true
 
-	// Scavenge
-	case "SCAV_BACKPACK_M":
-		// Convert passive into a timed consumable effect.
-		p.BuffInvCapBonus = 2
-		p.BuffInvCapUntil = time.Now().Add(30 * time.Second)
-		p.BuffMaxWeightBonus = 3.0
-		p.BuffMaxWeightUntil = time.Now().Add(30 * time.Second)
+	case "UTIL_STEALTH":
+		// Invisible for 15s
+		p.BuffInvisibleUntil = time.Now().Add(15 * time.Second)
 		used = true
-	case "SCAV_DETECTOR", "SCAV_MASTER_KEY":
-		// Minimal implementation: small funds bonus (placeholder for richer behaviors).
-		p.Funds += int(50 * float64(item.Tier))
-		used = true
-	case "SCAV_DECODER":
-		// Minimal implementation: if channeling a motor, boost its progress.
-		if p.ChannelingTargetUID != "" {
-			if ent, ok := gs.Entities[p.ChannelingTargetUID]; ok && ent.Type == EntityTypeMotor {
-				if md, ok2 := ent.Extra.(MotorData); ok2 {
-					md.Progress += 25
-					if md.Progress > md.MaxProgress {
-						md.Progress = md.MaxProgress
-					}
-					ent.Extra = md
-					gs.Entities[p.ChannelingTargetUID] = ent
-					used = true
-				}
-			}
-		}
 	}
 
 	if used {
@@ -661,18 +636,9 @@ func (gs *GameState) applyDamage(target *Player, dmg float64) {
 	if target == nil || dmg <= 0 {
 		return
 	}
-	dr := 0.0
-	now := time.Now()
-	if now.Before(target.BuffDamageReductionUntil) && target.BuffDamageReduction > 0 {
-		dr = target.BuffDamageReduction
-		if dr < 0 {
-			dr = 0
-		}
-		if dr > 0.90 {
-			dr = 0.90
-		}
-	}
-	eff := dmg * (1.0 - dr)
+	// Damage Reduction Buff removed. Armor is the new mitigation.
+	
+	eff := dmg 
 	target.HP -= eff
 	if target.HP <= 0 {
 		target.HP = 0
@@ -699,35 +665,6 @@ func (gs *GameState) findNearestEnemy(attacker *Player, rng float64) *Player {
 		}
 	}
 	return target
-}
-
-func (gs *GameState) handleDeath(p *Player) {
-	if p == nil {
-		return
-	}
-	if p.DeathHandled {
-		return
-	}
-	p.DeathHandled = true
-
-	for _, item := range p.Inventory {
-		uid := NewUID()
-		ent := Entity{
-			UID:   uid,
-			Type:  EntityTypeItemDrop,
-			Pos:   p.Pos,
-			State: 1,
-			Extra: item,
-		}
-		gs.Entities[uid] = ent
-	}
-	p.Inventory = []Item{}
-	name := p.Name
-	if name == "" || name == "Unknown" {
-		name = p.SessionID
-	}
-	gs.addEvent("DEATH", fmt.Sprintf("%s 死亡", name))
-	log.Printf("Player %s died.", p.SessionID)
 }
 
 var globalUIDCounter int64

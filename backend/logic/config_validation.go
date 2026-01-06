@@ -121,6 +121,9 @@ func ClampGameConfig(cfg *GameConfig) {
 	// --- combat ---
 	cfg.Combat.BaseAttackDamage = clampFloat(cfg.Combat.BaseAttackDamage, 1.0, 200.0)
 	cfg.Combat.AdvancedReconDurationSec = clampFloat(cfg.Combat.AdvancedReconDurationSec, 1.0, 120.0)
+	cfg.Combat.ProjectileLifetimeSec = clampFloat(cfg.Combat.ProjectileLifetimeSec, 1.0, 30.0)
+	cfg.Combat.ReloadTimeSec = clampFloat(cfg.Combat.ReloadTimeSec, 0.05, 5.0)
+	cfg.Combat.DefaultBounces = clampInt(cfg.Combat.DefaultBounces, 0, 100)
 
 	// --- phases ---
 	cfg.Phases.Phase1.Duration = clampInt(cfg.Phases.Phase1.Duration, 10, 3600)
