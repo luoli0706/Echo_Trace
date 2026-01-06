@@ -750,7 +750,7 @@ func (gs *GameState) HandleFire(sessionID string) {
 	}
 
 	// Rate Limit
-	reloadSec := 0.2
+	reloadSec := 0.5
 	if gs.Config != nil && gs.Config.Combat.ReloadTimeSec > 0 {
 		reloadSec = gs.Config.Combat.ReloadTimeSec
 	}
@@ -761,7 +761,7 @@ func (gs *GameState) HandleFire(sessionID string) {
 	p.LastFireTime = time.Now()
 
 	// Params
-	speed := 12.0
+	speed := 15.0 // Slightly faster for better feel
 	damage := 20.0
 	radius := 0.3
 	if gs.Config != nil {
@@ -1324,17 +1324,22 @@ func (gs *GameState) updateProjectiles(dt float64) {
 					data.Velocity.Y = -data.Velocity.Y
 				}
 				if !hitX && !hitY {
-					// Hit a corner perfectly or glitch? Reverse both to be safe
 					data.Velocity.X = -data.Velocity.X
 					data.Velocity.Y = -data.Velocity.Y
 				}
 				
 				data.BouncesLeft--
 				e.Extra = data
-				// Don't update Pos to nextPos if it's inside wall. 
-				// Just flip velocity. Next frame it will move away.
-				gs.Entities[uid] = e
-				continue
+				
+				// Move out of wall in same frame to avoid "stutter"
+				nextPos = Vector2{
+					X: e.Pos.X + data.Velocity.X*dt,
+					Y: e.Pos.Y + data.Velocity.Y*dt,
+				}
+				// If still colliding after reflection, just stay put to avoid tunneling
+				if gs.checkCollision(nextPos, data.Radius) {
+					nextPos = e.Pos
+				}
 			} else {
 				// No bounces left, destroy
 				toRemove = append(toRemove, uid)

@@ -126,8 +126,8 @@
     "_comment_proj_life": "子弹存活时间（秒）。默认5.0。允许范围: 1.0-30.0。",
     "default_bounces": 0,
     "_comment_bounces": "子弹默认反弹次数。0=撞墙销毁。允许范围: 0-100。",
-    "reload_time_sec": 0.2,
-    "_comment_reload": "射击冷却时间（秒）。默认0.2（即5发/秒）。允许范围: 0.05-5.0。",
+    "reload_time_sec": 0.5,
+    "_comment_reload": "射击冷却时间（秒）。默认0.5（即2发/秒）。允许范围: 0.05-5.0。",
     "advanced_recon_duration_sec": 30.0,
     "_comment_recon": "高级侦察（标记）持续时间（秒）。允许范围: 1.0-120.0（超限会被服务端强制截断）。",
     "attack_requires_vision": true

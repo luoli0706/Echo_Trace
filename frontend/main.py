@@ -75,6 +75,7 @@ def main():
     renderer.resume_id_input = ""
     renderer.resume_cursor = 0
     input_dir = [0, 0]
+    last_fire_send = 0.0
 
     def _append_text(dst: str, text: str, max_len: int = 120) -> str:
         if not text:
@@ -581,7 +582,10 @@ def main():
                             if near_merchant: renderer.show_shop = True
                             elif net: net.send({"type": 2003, "payload": {}}) # Interact
                         elif event.key == pygame.K_SPACE:
-                            if net: net.send({"type": 2010, "payload": {}}) # Fire
+                            now = time.monotonic()
+                            if net and (now - last_fire_send) > 0.4: # Slightly less than server 0.5 for tolerance
+                                net.send({"type": 2010, "payload": {}}) # Fire
+                                last_fire_send = now
                         
                         # Number Keys
                         elif event.key >= pygame.K_1 and event.key <= pygame.K_6:
