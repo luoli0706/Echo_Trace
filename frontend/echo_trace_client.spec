@@ -10,6 +10,7 @@ project_dir = frontend_dir.parent
 assets_dir = frontend_dir / "assets"
 config_dir = project_dir / "config"
 legacy_cfg = project_dir / "game_config.json"
+protocol_json = project_dir / "protocol.json"
 
 _datas = []
 if assets_dir.exists():
@@ -17,7 +18,11 @@ if assets_dir.exists():
 if config_dir.exists():
     _datas.append((str(config_dir), "config"))
 if legacy_cfg.exists():
-    _datas.append((str(legacy_cfg), "game_config.json"))
+    # For single-file datas, the second tuple item is a *destination directory*
+    # inside the bundle, not the target filename.
+    _datas.append((str(legacy_cfg), "."))
+if protocol_json.exists():
+    _datas.append((str(protocol_json), "."))
 
 
 a = Analysis(
