@@ -22,6 +22,7 @@ class GameState:
         self.inventory_cap = 6
         self.funds = 0
         self.is_extracted = False
+        self.is_dead = False
 
         # Merchant
         self.shop_stock = []
@@ -77,6 +78,7 @@ class GameState:
             self.view_radius = s["view_radius"]
             self.funds = s.get("funds", 0)
             self.is_extracted = s.get("is_extracted", False)
+            self.is_dead = s.get("is_dead", False)
             inv = s.get("inventory")
             self.my_inventory = inv if inv is not None else []
             self.inventory_cap = s.get("inventory_cap", 6)
@@ -100,8 +102,35 @@ class GameState:
                 self.toast_msg = msg
 
         if "vision" in payload:
-            self.players = {}
+            # Mark all existing as stale (not seen in this frame yet)
+            # We don't delete yet. We update those visible.
+            
+            visible_ids = set()
+            import time
+            now = time.time()
+            
             for p in payload["vision"]["players"]:
-                self.players[p["session_id"]] = p
+                pid = p["session_id"]
+                visible_ids.add(pid)
+                # Update or Add
+                if pid not in self.players:
+                    self.players[pid] = p
+                else:
+                    self.players[pid].update(p)
+                self.players[pid]["last_seen"] = now
+                self.players[pid]["visible"] = True
+            
+            # Check for stale players
+            to_remove = []
+            for pid, p in self.players.items():
+                if pid not in visible_ids:
+                    p["visible"] = False
+                    # Keep for 2.0s
+                    last = p.get("last_seen", 0)
+                    if now - last > 2.0:
+                        to_remove.append(pid)
+            
+            for pid in to_remove:
+                del self.players[pid]
             
             self.entities = payload["vision"]["entities"]

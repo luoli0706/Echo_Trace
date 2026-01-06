@@ -66,6 +66,25 @@ func (m *GameMap) GetRandomSpawnPos() Vector2 {
 	}
 }
 
+func (m *GameMap) GetFarSpawnPos(currentPos Vector2, minDistance float64) Vector2 {
+	best := m.GetRandomSpawnPos()
+	bestDist := Distance(currentPos, best)
+
+	// Try 10 times to find a better one
+	for i := 0; i < 10; i++ {
+		p := m.GetRandomSpawnPos()
+		d := Distance(currentPos, p)
+		if d > bestDist {
+			best = p
+			bestDist = d
+		}
+		if bestDist >= minDistance {
+			break
+		}
+	}
+	return best
+}
+
 // HasLineOfSight returns true if the segment from 'from' to 'to' does not cross any wall tiles.
 // Coordinates are in world space where integer grid cells correspond to tiles.
 func (m *GameMap) HasLineOfSight(from, to Vector2) bool {

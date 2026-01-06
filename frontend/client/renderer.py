@@ -871,12 +871,37 @@ class Renderer:
         for pid, p in state.players.items():
             if self.hide_world_entities:
                 continue
+            
+            # Check visibility
+            is_visible = p.get("visible", True)
+            
+            # Calculate alpha for residual
+            alpha = 255
+            if not is_visible:
+                import time
+                age = time.time() - p.get("last_seen", 0)
+                if age > 2.0: continue
+                # Fade out: 255 -> 0 over 2s
+                alpha = int(255 * (1.0 - (age / 2.0)))
+                if alpha <= 0: continue
+
             # Server snapshot already applies AOI (FOV + LOS). Client fog will hide out-of-FOV.
             sx, sy = self.world_to_screen(p["pos"]["x"], p["pos"]["y"], cam_x, cam_y)
-            pygame.draw.circle(self.screen, COLOR_ENEMY, (sx, sy), rd)
+            
+            # Draw with alpha (requires temp surface)
+            # Create a small surface for the player
+            p_surf = pygame.Surface((rd*2, rd*2), pygame.SRCALPHA)
+            
+            # Draw circle on p_surf center
+            pygame.draw.circle(p_surf, (*COLOR_ENEMY, alpha), (rd, rd), rd)
+            self.screen.blit(p_surf, (sx-rd, sy-rd))
+
             if p.get("armor", 0) > 0:
-                self.draw_armor_bar(sx-half, sy-half-9, p["armor"], p.get("max_armor", 50))
-            self.draw_hp_bar(sx-half, sy-half-5, p["hp"], p["max_hp"])
+                # Armor bar alpha? Simplified: don't draw bars for ghosts to reduce clutter, or draw full.
+                if is_visible:
+                    self.draw_armor_bar(sx-half, sy-half-9, p["armor"], p.get("max_armor", 50))
+            if is_visible:
+                self.draw_hp_bar(sx-half, sy-half-5, p["hp"], p["max_hp"])
 
             # Player name (AOI-visible only).
             nm = p.get("name")
@@ -885,7 +910,9 @@ class Renderer:
                 if len(nm2) > 14:
                     nm2 = nm2[:14] + "…"
                 try:
+                    # Fade text too
                     ns = self.hud_font.render(nm2, True, (255,255,255))
+                    ns.set_alpha(alpha)
                     self.screen.blit(ns, ns.get_rect(center=(sx, sy - half - 14)))
                 except Exception:
                     pass

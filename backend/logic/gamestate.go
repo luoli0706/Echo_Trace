@@ -913,12 +913,47 @@ func (gs *GameState) applyDamageLocked(attacker, victim *Player, damage float64)
 
 	if victim.HP <= 0 {
 		victim.HP = 0
-		victim.IsAlive = false
-		attacker.Kills++
-		gs.TotalKills++
-		gs.addEvent("PLAYER_KILLED", fmt.Sprintf("%s was eliminated by %s!", victim.Name, attacker.Name))
-		gs.checkPhaseThresholds()
+		victim.IsAlive = false // Explicitly set to false
+		if !victim.IsDead { // Prevent multiple death calls
+			attacker.Kills++
+			gs.TotalKills++
+			gs.addEvent("PLAYER_KILLED", fmt.Sprintf("%s was eliminated by %s!", victim.Name, attacker.Name))
+			gs.handleDeath(victim)
+			gs.checkPhaseThresholds()
+		}
 	}
+}
+
+func (gs *GameState) handleDeath(p *Player) {
+	if p == nil {
+		return
+	}
+	if p.IsDead {
+		return
+	}
+	p.IsAlive = false
+	p.IsDead = true
+	p.RespawnTimer = time.Now().Add(5 * time.Second) // Hardcoded 5s or config
+
+	// Drop Inventory
+	for _, item := range p.Inventory {
+		uid := NewUID()
+		ent := Entity{
+			UID:   uid,
+			Type:  EntityTypeItemDrop,
+			Pos:   p.Pos,
+			State: 1,
+			Extra: item,
+		}
+		gs.Entities[uid] = ent
+	}
+	p.Inventory = []Item{}
+	name := p.Name
+	if name == "" || name == "Unknown" {
+		name = p.SessionID
+	}
+	gs.addEvent("DEATH", fmt.Sprintf("%s 死亡 (5s 后重生)", name))
+	log.Printf("Player %s died. Respawning in 5s...", p.SessionID)
 }
 
 func (gs *GameState) checkPhaseThresholds() {
@@ -1040,38 +1075,6 @@ func (gs *GameState) HandleInteract(sessionID string) {
 	}
 }
 
-func (gs *GameState) handleDeath(p *Player) {
-	if p == nil {
-		return
-	}
-	if p.IsDead {
-		return
-	}
-	p.IsAlive = false
-	p.IsDead = true
-	p.RespawnTimer = time.Now().Add(5 * time.Second) // Hardcoded 5s or config
-
-	// Drop Inventory
-	for _, item := range p.Inventory {
-		uid := NewUID()
-		ent := Entity{
-			UID:   uid,
-			Type:  EntityTypeItemDrop,
-			Pos:   p.Pos,
-			State: 1,
-			Extra: item,
-		}
-		gs.Entities[uid] = ent
-	}
-	p.Inventory = []Item{}
-	name := p.Name
-	if name == "" || name == "Unknown" {
-		name = p.SessionID
-	}
-	gs.addEvent("DEATH", fmt.Sprintf("%s 死亡 (5s 后重生)", name))
-	log.Printf("Player %s died. Respawning in 5s...", p.SessionID)
-}
-
 func (gs *GameState) UpdateTick(dt float64) {
 	gs.Mutex.Lock()
 	defer gs.Mutex.Unlock()
@@ -1101,8 +1104,10 @@ func (gs *GameState) UpdateTick(dt float64) {
 			p.IsAlive = true
 			p.HP = p.MaxHP
 			p.Armor = p.MaxArmor
-			p.Pos = gs.Map.GetRandomSpawnPos()
+			// Spawn Logic: Try positions far from death point (p.Pos is current pos)
+			p.Pos = gs.Map.GetFarSpawnPos(p.Pos, 15.0)
 			gs.addEvent("RESPAWN", fmt.Sprintf("%s 重返战场!", p.Name))
+			log.Printf("RESPAWN: Player %s revived at %v", p.Name, p.Pos)
 		}
 	}
 
