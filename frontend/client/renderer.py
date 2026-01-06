@@ -4,13 +4,13 @@ from datetime import datetime
 from client.config import *
 from client.i18n import i18n
 from client.item_manual import CATEGORY_ORDER, get_item_abbr, get_item_name, get_item_use
+from client.resources import asset_path, config_path, legacy_game_config_path
 
 class Renderer:
     def __init__(self, screen):
         self.screen = screen
         self.assets = {}
-        icon_path = os.path.join("frontend", "assets", "icos")
-        if not os.path.exists(icon_path): icon_path = "assets/icos"
+        icon_path = asset_path("icos")
         def load_icon(name, key):
             try:
                 p = os.path.join(icon_path, name)
@@ -29,10 +29,14 @@ class Renderer:
             return pygame.font.SysFont("arial", size)
         self.font = get_cjk_font(FONT_SIZE); self.hud_font = get_cjk_font(16); self.time_font = pygame.font.SysFont("consolas", 24)
         self.fog_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
-        self.state = "CONNECT"; self.server_input = "ws://localhost:8080/ws"; self.name_input = "Agent_07"
+        self.state = "CONNECT"; self.server_input = ""; self.name_input = "Agent_07"
         # CONNECT inputs
         self.connect_focus = "server"  # server | resume_id
         self.resume_id_input = ""  # optional session_id for cold-start resume
+        self.server_cursor = 0
+        self.resume_cursor = 0
+        self.connect_server_rect = None
+        self.connect_resume_rect = None
         self.menu_message = ""
         # Room list state
         self.rooms = []
@@ -174,6 +178,7 @@ class Renderer:
             "phases.json",
         ]
         file_candidates = [
+            legacy_game_config_path(),
             os.path.join("game_config.json"),
             os.path.join("..", "game_config.json"),
             os.path.join("frontend", "..", "game_config.json"),
@@ -186,6 +191,7 @@ class Renderer:
                 break
 
         dir_candidates = [
+            config_path(),
             os.path.join("config"),
             os.path.join("..", "config"),
             os.path.join("frontend", "..", "config"),
@@ -909,17 +915,27 @@ class Renderer:
 
         # Server URL
         r1 = pygame.Rect(WINDOW_WIDTH//2 - 220, 260, 440, 40)
+        self.connect_server_rect = r1
         pygame.draw.rect(self.screen, (50, 50, 60), r1)
         pygame.draw.rect(self.screen, (0, 255, 255) if self.connect_focus == "server" else (120, 120, 140), r1, 2)
-        s1 = self.server_input + ("|" if self.connect_focus == "server" else "")
+        if self.connect_focus == "server":
+            cur = max(0, min(int(getattr(self, "server_cursor", 0)), len(self.server_input)))
+            s1 = self.server_input[:cur] + "|" + self.server_input[cur:]
+        else:
+            s1 = self.server_input
         self.screen.blit(self.font.render(s1, True, (255, 255, 255)), (r1.x + 10, r1.y + 6))
         self.screen.blit(self.hud_font.render(self.t("ENTER_URL"), True, (150, 150, 150)), (r1.x + 10, r1.y + 48))
 
         # Resume ID (session_id)
         r2 = pygame.Rect(WINDOW_WIDTH//2 - 220, 360, 440, 40)
+        self.connect_resume_rect = r2
         pygame.draw.rect(self.screen, (50, 50, 60), r2)
         pygame.draw.rect(self.screen, (0, 255, 255) if self.connect_focus == "resume_id" else (120, 120, 140), r2, 2)
-        s2 = self.resume_id_input + ("|" if self.connect_focus == "resume_id" else "")
+        if self.connect_focus == "resume_id":
+            cur = max(0, min(int(getattr(self, "resume_cursor", 0)), len(self.resume_id_input)))
+            s2 = self.resume_id_input[:cur] + "|" + self.resume_id_input[cur:]
+        else:
+            s2 = self.resume_id_input
         self.screen.blit(self.font.render(s2, True, (255, 255, 255)), (r2.x + 10, r2.y + 6))
         self.screen.blit(self.hud_font.render(self.t("ENTER_RESUME_ID"), True, (150, 150, 150)), (r2.x + 10, r2.y + 48))
 

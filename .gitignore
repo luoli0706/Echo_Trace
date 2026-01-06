@@ -14,5 +14,13 @@ backend/game.db
 backend/echo_trace_server
 *.exe
 
+# --- PyInstaller / client packaging outputs ---
+frontend/build/
+frontend/dist/
+frontend/assets/app.ico
+
+# --- Archives / bundles ---
+*.tar.gz
+
 # --- Deploy (not tracked) ---
 deploy/

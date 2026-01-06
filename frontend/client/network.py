@@ -5,7 +5,7 @@ import time
 
 
 class NetworkClient:
-    def __init__(self, url, recv_queue, session_id=None, player_name=None):
+    def __init__(self, url, recv_queue, session_id=None, player_name=None, connect_timeout_sec: float = 2.5):
         self.url = url
         self.recv_queue = recv_queue
         self.ws = None
@@ -13,6 +13,12 @@ class NetworkClient:
         self.thread = threading.Thread(target=self._run)
         self.thread.daemon = True
         self.connected = False
+        self.last_error = ""
+
+        try:
+            self.connect_timeout_sec = float(connect_timeout_sec)
+        except Exception:
+            self.connect_timeout_sec = 2.5
 
         self._lock = threading.Lock()
         self.session_id = session_id or ""
@@ -22,10 +28,24 @@ class NetworkClient:
     def start(self):
         self.thread.start()
 
+    def stop(self):
+        self.running = False
+        try:
+            if self.ws is not None:
+                self.ws.close()
+        except Exception:
+            pass
+
     def _run(self):
         while self.running:
             try:
                 print(f"Connecting to {self.url}...")
+                # Apply a default socket timeout so failed connects don't hang forever.
+                try:
+                    websocket.setdefaulttimeout(self.connect_timeout_sec)
+                except Exception:
+                    pass
+
                 self.ws = websocket.WebSocketApp(
                     self.url,
                     on_open=self._on_open,
@@ -33,15 +53,19 @@ class NetworkClient:
                     on_error=self._on_error,
                     on_close=self._on_close
                 )
-                self.ws.run_forever()
-                time.sleep(3) 
+                # Keep ping enabled so dead connections are detected.
+                self.ws.run_forever(ping_interval=10, ping_timeout=5)
+                # If the server closes immediately or connect fails, don't wait long to retry.
+                time.sleep(1)
             except Exception as e:
                 print(f"Network error: {e}")
-                time.sleep(3)
+                self.last_error = str(e)
+                time.sleep(1)
 
     def _on_open(self, ws):
         print("Connected to Server")
         self.connected = True
+        self.last_error = ""
 
         # If we were previously in a room, auto re-join on reconnect.
         with self._lock:
@@ -66,10 +90,13 @@ class NetworkClient:
 
     def _on_error(self, ws, error):
         print(f"WS Error: {error}")
+        self.last_error = str(error)
 
     def _on_close(self, ws, close_status_code, close_msg):
         print("Disconnected")
         self.connected = False
+        if close_status_code or close_msg:
+            self.last_error = f"closed ({close_status_code}): {close_msg}".strip()
 
     def send(self, data):
         if self.ws and self.connected:

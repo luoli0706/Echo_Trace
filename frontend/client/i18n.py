@@ -14,7 +14,8 @@ class I18n:
 
     def load_locales(self):
         # Assumes running from 'frontend/' directory or project root
-        base_path = os.path.join("assets", "locales")
+        from client.resources import asset_path
+        base_path = asset_path("locales")
         # Try finding assets folder
         if not os.path.exists(base_path):
              # Try going up one level if we are in frontend/client/
