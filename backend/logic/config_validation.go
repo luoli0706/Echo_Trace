@@ -146,4 +146,33 @@ func ClampGameConfig(cfg *GameConfig) {
 	cfg.Phases.Phase3.ExtractionCooldownSec = clampInt(cfg.Phases.Phase3.ExtractionCooldownSec, 0, 120)
 	cfg.Phases.Phase3.GlobalPulseIntervalSec = clampInt(cfg.Phases.Phase3.GlobalPulseIntervalSec, 1, 60)
 	cfg.Phases.Phase3.ViewRadiusDecayRatePerSec = clampFloat(cfg.Phases.Phase3.ViewRadiusDecayRatePerSec, 0.0, 2.0)
+
+	// --- AI ---
+	if cfg.AI.NingBye.HP <= 0 { cfg.AI.NingBye.HP = 300 }
+	cfg.AI.NingBye.HP = clampFloat(cfg.AI.NingBye.HP, 50, 2000)
+	
+	if cfg.AI.NingBye.Armor < 0 { cfg.AI.NingBye.Armor = 150 } // Allow 0, but set default if "empty" logic needed? struct defaults to 0. 
+	// Actually for Armor default 0 is valid for other things, but here we want 150 default if not set? 
+	// JSON loading sets to 0 if missing. We can't distinguish "missing" from "set to 0".
+	// Let's assume if HP was default (0 -> 300), we also set Armor to 150.
+	// A better way is to check against a reasonable minimum or just force default if 0 AND HP was 0.
+	// But `ClampGameConfig` is called after load.
+	// Let's just set 150 if it's 0, assuming the Boss *should* have armor.
+	if cfg.AI.NingBye.Armor == 0 { cfg.AI.NingBye.Armor = 150 }
+	cfg.AI.NingBye.Armor = clampFloat(cfg.AI.NingBye.Armor, 0, 1000)
+
+	if cfg.AI.NingBye.MoveSpeed <= 0 { cfg.AI.NingBye.MoveSpeed = 3.0 }
+	cfg.AI.NingBye.MoveSpeed = clampFloat(cfg.AI.NingBye.MoveSpeed, 1.0, 10.0)
+
+	if cfg.AI.NingBye.Damage <= 0 { cfg.AI.NingBye.Damage = 50.0 }
+	cfg.AI.NingBye.Damage = clampFloat(cfg.AI.NingBye.Damage, 1.0, 500.0)
+
+	if cfg.AI.NingBye.ArmorPenetration <= 0 { cfg.AI.NingBye.ArmorPenetration = 0.75 }
+	cfg.AI.NingBye.ArmorPenetration = clampFloat(cfg.AI.NingBye.ArmorPenetration, 0.0, 1.0)
+
+	if cfg.AI.NingBye.ReloadTimeSec <= 0 { cfg.AI.NingBye.ReloadTimeSec = 0.25 }
+	cfg.AI.NingBye.ReloadTimeSec = clampFloat(cfg.AI.NingBye.ReloadTimeSec, 0.1, 5.0)
+
+	if cfg.AI.NingBye.SensingRadiusRatio <= 0 { cfg.AI.NingBye.SensingRadiusRatio = 0.75 }
+	cfg.AI.NingBye.SensingRadiusRatio = clampFloat(cfg.AI.NingBye.SensingRadiusRatio, 0.1, 5.0)
 }

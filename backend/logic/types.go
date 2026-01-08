@@ -15,6 +15,7 @@ const (
 	EntityTypeSupplyDrop = "SUPPLY_DROP"
 	EntityTypeMerchant   = "MERCHANT"
 	EntityTypeProjectile = "PROJECTILE"
+	EntityTypeNingBye    = "NING_BYE"
 )
 
 type ProjectileData struct {
@@ -24,13 +25,34 @@ type ProjectileData struct {
 	Radius      float64   `json:"radius"`
 	Lifetime    time.Time `json:"lifetime"`
 	BouncesLeft int       `json:"bounces_left"`
+	// AI Specifics
+	ArmorPenetration float64 `json:"armor_penetration"` // 0.0 to 1.0
+}
+
+// NingByeAI holds the state for the boss unit
+type NingByeAI struct {
+	State            int       `json:"state"` // 0: Patrol, 1: CommandMove, 2: Combat
+	HP               float64   `json:"hp"`
+	MaxHP            float64   `json:"max_hp"`
+	Armor            float64   `json:"armor"`
+	MaxArmor         float64   `json:"max_armor"`
+	MoveSpeed        float64   `json:"move_speed"`
+	Damage           float64   `json:"damage"`
+	ArmorPenetration float64   `json:"armor_penetration"`
+	ReloadTimeSec    float64   `json:"reload_time_sec"`
+	TargetPos        Vector2   `json:"target_pos"`      // For Command Move
+	PatrolPath       []Vector2 `json:"-"`               // Current movement path
+	CombatTargetID   string    `json:"combat_target"`   // Player ID
+	LostTargetTime   time.Time `json:"-"`               // When did we lose the target?
+	LastFireTime     time.Time `json:"-"`
+	SensingRadius    float64   `json:"sensing_radius"`
 }
 
 type Entity struct {
 	UID   string      `json:"uid"`
 	Type  string      `json:"type"`
 	Pos   Vector2     `json:"pos"`
-	State int         `json:"state"` // For Motors: 0=Inactive, 1=Active, 2=Done
+	State int         `json:"state"` // For Motors: 0=Inactive, 1=Active, 2=Done. For AI: Syncs logic state.
 	Extra interface{} `json:"extra,omitempty"`
 }
 
@@ -71,6 +93,9 @@ type Player struct {
 	MaxWeight float64 `json:"max_weight"`
 	Weight    float64 `json:"weight"`
 	Funds     int     `json:"funds"`
+	
+	// Threat System
+	IsThreat bool `json:"is_threat"` // Controlled by MCP
 
 	Velocity                 Vector2  `json:"-"`
 	TargetDir                Vector2  `json:"-"`
@@ -198,6 +223,17 @@ type GameConfig struct {
 		} `json:"scavenge_share_by_phase"`
 		TacticFocusShare float64 `json:"tactic_focus_share"`
 	} `json:"items"`
+	AI struct {
+		NingBye struct {
+			HP               float64 `json:"hp"`
+			Armor            float64 `json:"armor"`
+			MoveSpeed        float64 `json:"move_speed"`
+			Damage           float64 `json:"damage"`
+			ArmorPenetration float64 `json:"armor_penetration"`
+			ReloadTimeSec    float64 `json:"reload_time_sec"`
+			SensingRadiusRatio float64 `json:"sensing_radius_ratio"`
+		} `json:"ning_bye"`
+	} `json:"ai"`
 	Tactics struct {
 		Recon struct {
 			MaxHPMult        float64 `json:"max_hp_mult"`

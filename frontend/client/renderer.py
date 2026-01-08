@@ -891,6 +891,48 @@ class Renderer:
                     if ex: self.draw_bar(tl[0], tl[1]-10, ex.get("progress", 0), ex.get("max_progress", 100), (0, 255, 255))
             elif ent["type"] == "EXIT":
                 pygame.draw.rect(self.screen, COLOR_EXIT, (tl[0], tl[1], GRID_SIZE, GRID_SIZE), 0); self.draw_text_centered("E", sx, sy, (0, 0, 0))
+            elif ent["type"] == "NING_BYE":
+                # Draw Boss Unit (1.5x size)
+                boss_size = int(GRID_SIZE * 1.5)
+                offset = (boss_size - GRID_SIZE) // 2
+                
+                # tl is top-left of the standard grid cell. 
+                # We want to center the 1.5x box on the cell center.
+                # Center of cell: sx, sy.
+                # Top-left of boss: sx - boss_size//2, sy - boss_size//2
+                
+                bx, by = sx - boss_size // 2, sy - boss_size // 2
+                
+                boss_color = (255, 50, 50)
+                pygame.draw.rect(self.screen, boss_color, (bx, by, boss_size, boss_size), 0)
+                pygame.draw.rect(self.screen, (255, 255, 255), (bx, by, boss_size, boss_size), 2)
+                self.draw_text_centered("BOSS", sx, sy, (255, 255, 255))
+                
+                # Draw Sensing Radius
+                ex = ent.get("extra", {})
+                if isinstance(ex, dict):
+                    radius = float(ex.get("sensing_radius", 0))
+                    if radius > 0:
+                        # Draw circle
+                        r_px = int(radius * GRID_SIZE)
+                        s = pygame.Surface((r_px * 2, r_px * 2), pygame.SRCALPHA)
+                        pygame.draw.circle(s, (255, 0, 0, 50), (r_px, r_px), r_px)
+                        pygame.draw.circle(s, (255, 0, 0, 100), (r_px, r_px), r_px, 1)
+                        self.screen.blit(s, (sx - r_px, sy - r_px))
+                        
+                    # Draw Health Bar (Always)
+                    hp = float(ex.get("hp", 300))
+                    max_hp = float(ex.get("max_hp", 300))
+                    self.draw_hp_bar(sx - half, sy - half - 10, hp, max_hp)
+                    
+                    # Draw State Text
+                    ai_state = int(ex.get("state", 0))
+                    st_txt = "PATROL"
+                    if ai_state == 1: st_txt = "MOVE"
+                    elif ai_state == 2: st_txt = "COMBAT"
+                    st_surf = self.hud_font.render(st_txt, True, (255, 100, 100))
+                    self.screen.blit(st_surf, st_surf.get_rect(center=(sx, sy - half - 22)))
+
             elif ent["type"] == "PROJECTILE":
                 # Render projectile as white circle
                 r = 4 # pixel radius
@@ -1319,6 +1361,7 @@ class Renderer:
                 elif blip["type"] == "EXIT": pygame.draw.circle(self.screen, (0,255,0), (int(ox+bx), int(oy+by)), 4)
                 elif blip["type"] == "SUPPLY_DROP": pygame.draw.rect(self.screen, (255,0,255), (ox+bx-3, oy+by-3, 6, 6))
                 elif blip["type"] == "MERCHANT": pygame.draw.rect(self.screen, (255,215,0), (ox+bx-3, oy+by-3, 6, 6))
+                elif blip["type"] == "NING_BYE": pygame.draw.circle(self.screen, (255, 0, 0), (int(ox+bx), int(oy+by)), 5)
         sx, sy = state.my_pos[0] * scale, state.my_pos[1] * scale; pygame.draw.circle(self.screen, COLOR_SELF, (int(ox+sx), int(oy+sy)), 3)
 
     def draw_bar(self, x, y, val, max_val, color):

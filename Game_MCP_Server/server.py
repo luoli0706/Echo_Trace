@@ -78,13 +78,13 @@ def modify_special_attribute(session_id: str, stealth_mode: bool) -> str:
     """Set special attribute (stealth)."""
     return f"Set stealth to {stealth_mode} (Mock)"
 
-# Register to MCP (Optional, for standard MCP clients)
-# mcp.add_tool(modify_player_health)
-# mcp.add_tool(modify_player_armor)
-# mcp.add_tool(modify_inventory_capacity)
-# mcp.add_tool(add_items_to_inventory)
-# mcp.add_tool(modify_player_speed)
-# mcp.add_tool(modify_special_attribute)
+def set_player_threat(session_id: str, is_threat: bool) -> str:
+    """Mark a player as a 'Threat' to the NingBye AI system."""
+    return _call_backend("/admin/player/threat", {"session_id": session_id, "is_threat": is_threat})
+
+def command_ai_patrol(target_x: float, target_y: float) -> str:
+    """Command the NingBye AI unit to move to a specific coordinate."""
+    return _call_backend("/admin/ai/command", {"target_x": target_x, "target_y": target_y})
 
 # --- FastAPI App ---
 app = FastAPI()
@@ -175,6 +175,36 @@ TOOLS_SCHEMA = [
                 "required": ["session_id", "multiplier", "duration_sec"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_player_threat",
+            "description": "Mark or unmark player as a threat to AI. Use when user wants to be attacked or ignored by AI.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string"},
+                    "is_threat": {"type": "boolean", "description": "True to be targeted, False to be ignored"}
+                },
+                "required": ["session_id", "is_threat"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "command_ai_patrol",
+            "description": "Command the NingBye AI to move to a specific location (Route 2).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target_x": {"type": "number", "description": "Target X coordinate"},
+                    "target_y": {"type": "number", "description": "Target Y coordinate"}
+                },
+                "required": ["target_x", "target_y"]
+            }
+        }
     }
 ]
 
@@ -184,7 +214,9 @@ TOOL_MAP = {
     "modify_inventory_capacity": modify_inventory_capacity,
     "add_items_to_inventory": add_items_to_inventory,
     "modify_player_speed": modify_player_speed,
-    "modify_special_attribute": modify_special_attribute
+    "modify_special_attribute": modify_special_attribute,
+    "set_player_threat": set_player_threat,
+    "command_ai_patrol": command_ai_patrol
 }
 
 @app.post("/wish")

@@ -38,108 +38,41 @@ type ModifySpeedRequest struct {
 	Duration   float64 `json:"duration"`
 }
 
+type SetThreatRequest struct {
+	AdminRequest
+	IsThreat bool `json:"is_threat"`
+}
+
+type CommandAIRequest struct {
+	TargetX float64 `json:"target_x"`
+	TargetY float64 `json:"target_y"`
+}
+
 type WishRequest struct {
 	AdminRequest
 	Wish string `json:"wish"`
 }
 
-func findPlayerAndExecute(sessionID string, action func(gs interface{}) bool) bool {
-	// Access GlobalManager
-	if network.GlobalManager == nil {
-		return false
-	}
-	
-	// We need to iterate rooms safely.
-	// Since RoomManager.Rooms access needs lock, we use ListRooms then GetRoom
-	roomIDs := network.GlobalManager.ListRooms()
-	
-	for _, rid := range roomIDs {
-		room := network.GlobalManager.GetRoom(rid)
-		if room == nil { continue }
-		
-		// Access GameState
-		// Room struct has GameLoop, GameLoop has GameState.
-		// We need to check if player exists there first to avoid iterating all rooms if possible,
-		// but GameState locks are internal.
-		// The Admin methods in GameState handle the check "if player exists".
-		// But they return false if not found.
-		// So we just try every room until one returns true.
-		
-		if room.GameLoop != nil && room.GameLoop.GameState != nil {
-			// Because logic package is imported as "echo_trace_server/logic",
-			// and GameState is in that package.
-			// But here 'action' takes interface{} because we can't import "logic" inside main easily if main imports "logic"?
-			// Wait, main ALREADY imports logic.
-			
-			// We can cast gs to *logic.GameState in the closure.
-			// Actually, let's just pass the room's GameState directly.
-			
-			// Note: We are accessing GameState field of GameLoop.
-			// Is it thread safe? The pointer is constant, the content is mutex-protected.
-			// Yes.
-			
-			// We need to reflect or use type assertion in the caller, but here we are in 'main' package.
-			// We should pass the concrete type if possible, but let's see.
-			// main.go imports logic.
-			
-			success := action(room.GameLoop.GameState)
-			if success {
-				return true
-			}
-		}
-	}
-	return false
-}
+// ... (Legacy code, kept for reference but reusing logic)
 
 func handleAdminModifyHealth(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
+	if r.Method != "POST" { http.Error(w, "Method not allowed", http.StatusMethodNotAllowed); return }
 	var req ModifyHealthRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil { http.Error(w, err.Error(), http.StatusBadRequest); return }
 	
-	found := findPlayerAndExecute(req.SessionID, func(gs interface{}) bool {
-		// Use type assertion to access methods
-		// We know it is *logic.GameState but Go doesn't like circular deps if we were in logic.
-		// We are in main, so it is fine.
-		// But wait, the methods AdminModifyHealth are defined on *GameState.
-		// We need to import "echo_trace_server/logic".
-		
-		// The issue is: how to cast interface{} to *logic.GameState inside main?
-		// We need to make sure main.go imports logic. It does.
-		
-		// We can't use type assertion easily if we don't declare the type here.
-		// Let's refactor `findPlayerAndExecute` to take `*logic.GameState`.
-		return false // Placeholder, see below
-	})
-	
-	// Since I can't easily write the closure with proper types in this generic helper string,
-	// I will just write the loops in the handlers. It's safer.
-	
-	if !found {
-		// Try again with explicit loop
-		roomIDs := network.GlobalManager.ListRooms()
-		for _, rid := range roomIDs {
-			room := network.GlobalManager.GetRoom(rid)
-			if room != nil && room.GameLoop != nil && room.GameLoop.GameState != nil {
-				if room.GameLoop.GameState.AdminModifyHealth(req.SessionID, req.HP) {
-					found = true
-					break
-				}
+	found := false
+	roomIDs := network.GlobalManager.ListRooms()
+	for _, rid := range roomIDs {
+		room := network.GlobalManager.GetRoom(rid)
+		if room != nil && room.GameLoop != nil && room.GameLoop.GameState != nil {
+			if room.GameLoop.GameState.AdminModifyHealth(req.SessionID, req.HP) {
+				found = true
+				break
 			}
 		}
 	}
 
-	if found {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	} else {
-		http.Error(w, "Player not found", http.StatusNotFound)
-	}
+	if found { w.Write([]byte("OK")) } else { http.Error(w, "Player not found", http.StatusNotFound) }
 }
 
 func handleAdminModifyArmor(w http.ResponseWriter, r *http.Request) {
@@ -222,6 +155,49 @@ func handleAdminModifySpeed(w http.ResponseWriter, r *http.Request) {
 	if found { w.Write([]byte("OK")) } else { http.Error(w, "Player not found", http.StatusNotFound) }
 }
 
+func handleAdminSetThreat(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" { http.Error(w, "Method not allowed", http.StatusMethodNotAllowed); return }
+	var req SetThreatRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil { http.Error(w, err.Error(), http.StatusBadRequest); return }
+
+	found := false
+	roomIDs := network.GlobalManager.ListRooms()
+	for _, rid := range roomIDs {
+		room := network.GlobalManager.GetRoom(rid)
+		if room != nil && room.GameLoop != nil && room.GameLoop.GameState != nil {
+			if room.GameLoop.GameState.SetPlayerThreat(req.SessionID, req.IsThreat) {
+				found = true
+				break
+			}
+		}
+	}
+
+	if found { w.Write([]byte("OK")) } else { http.Error(w, "Player not found", http.StatusNotFound) }
+}
+
+func handleAdminCommandAI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" { http.Error(w, "Method not allowed", http.StatusMethodNotAllowed); return }
+	var req CommandAIRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil { http.Error(w, err.Error(), http.StatusBadRequest); return }
+
+	found := false
+	roomIDs := network.GlobalManager.ListRooms()
+	for _, rid := range roomIDs {
+		room := network.GlobalManager.GetRoom(rid)
+		if room != nil && room.GameLoop != nil && room.GameLoop.GameState != nil {
+			// Iterate all rooms, if any has AI, command it. 
+			// In multi-room setup, this is ambiguous (which room?), but for this demo assuming single active room or command all.
+			if room.GameLoop.GameState.CommandAI(req.TargetX, req.TargetY) {
+				found = true
+				// Continue to command all AIs in all rooms? Or break?
+				// Let's command all.
+			}
+		}
+	}
+
+	if found { w.Write([]byte("OK")) } else { http.Error(w, "AI not found in any room", http.StatusNotFound) }
+}
+
 func handleWish(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" { http.Error(w, "Method not allowed", http.StatusMethodNotAllowed); return }
 	var req WishRequest
@@ -256,7 +232,7 @@ func handleWish(w http.ResponseWriter, r *http.Request) {
 			}
 			gs.Mutex.Unlock()
 			
-			// Call AdminWish outside the lock to avoid deadlock (AdminWish acquires lock)
+			// Call AdminWish outside the lock to avoid deadlock
 			if consumed {
 				gs.AdminWish(req.SessionID, req.Wish)
 			}
@@ -289,7 +265,6 @@ func handleWish(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer resp.Body.Close()
-		// We could read response here if needed
 	}(req.SessionID, req.Wish)
 	
 	w.Write([]byte("Wish granted (Item Consumed)."))

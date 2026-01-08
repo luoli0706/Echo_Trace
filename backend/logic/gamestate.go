@@ -37,6 +37,7 @@ type GameState struct {
 	PhaseTimer   float64
 	RespawnTimer float64
 	PulseTimer   float64
+	AIPulseTimer float64 // For NingBye Radar Pulse
 	GlobalEvents []GlobalEvent
 	MotorsFixed  int
 	TotalKills   int
@@ -66,6 +67,7 @@ func NewGameState(cfg *GameConfig) *GameState {
 		PhaseTimer:   float64(cfg.Phases.Phase1.Duration),
 		RespawnTimer: respawn,
 		PulseTimer:   pulse,
+		AIPulseTimer: 30.0, // Initial delay
 		GlobalEvents: make([]GlobalEvent, 0),
 		StartTime:    time.Now(),
 	}
@@ -138,6 +140,9 @@ func (gs *GameState) StartGame() {
 
 	// Spawn Phase 1 Supply Drops
 	gs.spawnPhaseSupplyDrops(1)
+
+	// Spawn NingBye AI (Phase 1)
+	gs.spawnNingByeAI()
 
 	// Spawn Merchant
 	gs.spawnOrMoveMerchantForPhase(1)
@@ -863,7 +868,7 @@ func (gs *GameState) fireRailgun(p *Player, damage float64) {
 	}
 	
 	if bestTarget != nil {
-		gs.applyDamageLocked(p, bestTarget, damage)
+		gs.applyDamageLocked(p, bestTarget, damage, 0.0)
 		gs.addEvent("RAILGUN", fmt.Sprintf("Railgun fired by %s!", p.Name))
 	} else {
 		gs.addEvent("RAILGUN", fmt.Sprintf("Railgun fired by %s (Miss)", p.Name))
@@ -890,37 +895,96 @@ func (gs *GameState) hasLOS(start, end Vector2) bool {
 	return true
 }
 
-func (gs *GameState) applyDamageLocked(attacker, victim *Player, damage float64) {
+func (gs *GameState) applyDamageLocked(attacker, victim *Player, damage float64, penetration float64) {
 	// Check Invincibility
 	if time.Now().Before(victim.BuffInvincibleUntil) {
 		return // No Damage
 	}
 
-	// Armor reduces damage first
+	// Penetration Logic
+	// Portion of damage that ignores armor
+	hpDamage := damage * penetration
+	armorDamage := damage - hpDamage
+
+	// Apply Armor Damage
 	if victim.Armor > 0 {
-		if victim.Armor >= damage {
-			victim.Armor -= damage
-			damage = 0
+		if victim.Armor >= armorDamage {
+			victim.Armor -= armorDamage
+			armorDamage = 0
 		} else {
-			damage -= victim.Armor
+			remaining := armorDamage - victim.Armor
 			victim.Armor = 0
+			hpDamage += remaining // Overflow hits HP
 		}
+	} else {
+		hpDamage += armorDamage
 	}
 
-	if damage > 0 {
-		victim.HP -= damage
+	if hpDamage > 0 {
+		victim.HP -= hpDamage
 	}
 
 	if victim.HP <= 0 {
 		victim.HP = 0
 		victim.IsAlive = false // Explicitly set to false
 		if !victim.IsDead { // Prevent multiple death calls
-			attacker.Kills++
+			if attacker != nil {
+				attacker.Kills++
+			}
 			gs.TotalKills++
-			gs.addEvent("PLAYER_KILLED", fmt.Sprintf("%s was eliminated by %s!", victim.Name, attacker.Name))
+			killerName := "Environment"
+			if attacker != nil {
+				killerName = attacker.Name
+			} else {
+				// Try to identify AI? For now generic.
+				killerName = "NingBye System"
+			}
+			gs.addEvent("PLAYER_KILLED", fmt.Sprintf("%s was eliminated by %s!", victim.Name, killerName))
 			gs.handleDeath(victim)
 			gs.checkPhaseThresholds()
 		}
+	}
+}
+
+func (gs *GameState) applyDamageToAI(aiUID string, damage float64, attackerID string) {
+	ent, ok := gs.Entities[aiUID]
+	if !ok { return }
+	
+	data, ok := ent.Extra.(NingByeAI)
+	if !ok { return }
+	
+	// Armor Logic (Simple: Armor takes damage first)
+	if data.Armor > 0 {
+		if data.Armor >= damage {
+			data.Armor -= damage
+			damage = 0
+		} else {
+			damage -= data.Armor
+			data.Armor = 0
+		}
+	}
+	data.HP -= damage
+	
+	// Aggro Logic: Mark attacker as threat
+	if attackerID != "" {
+		if p, ok := gs.Players[attackerID]; ok {
+			p.IsThreat = true
+			// Optional: Force AI to switch target immediately?
+			// The UpdateNingByeAI loop will pick it up next frame since IsThreat is true and likely in range.
+		}
+	}
+
+	if data.HP <= 0 {
+		data.HP = 0
+		// AI Death Logic
+		gs.addEvent("BOSS_DEFEATED", "The NingBye Tunk has been destroyed!")
+		// Drop loot?
+		gs.SpawnSupplyDrop(ent.Pos, 3) // Drop Tier 3 loot
+		delete(gs.Entities, aiUID)
+	} else {
+		// Update Entity
+		ent.Extra = data
+		gs.Entities[aiUID] = ent
 	}
 }
 
@@ -1141,6 +1205,13 @@ func (gs *GameState) UpdateTick(dt float64) {
 			gs.addEvent("MOTOR_PULSE", "Motors are emitting a signal!")
 		}
 	}
+	
+	// AI Pulse Logic (Always active if AI exists)
+	gs.AIPulseTimer -= dt
+	if gs.AIPulseTimer <= 0 {
+		gs.AIPulseTimer = 30.0
+		// Optional: Add event? "High energy signature detected."
+	}
 
 	// 2. Channeling Logic
 	for _, p := range gs.Players {
@@ -1285,6 +1356,11 @@ func (gs *GameState) UpdateTick(dt float64) {
 
 	// 5. Update Projectiles
 	gs.updateProjectiles(dt)
+	
+	// 6. Update AI
+	if gs.Phase >= PhaseSearch && gs.Phase <= PhaseEscape {
+		gs.UpdateNingByeAI(dt)
+	}
 }
 
 func (gs *GameState) updateProjectiles(dt float64) {
@@ -1365,10 +1441,29 @@ func (gs *GameState) updateProjectiles(dt float64) {
 				// Hit!
 				owner, hasOwner := gs.Players[data.OwnerID]
 				if hasOwner {
-					gs.applyDamageLocked(owner, p, data.Damage)
+					gs.applyDamageLocked(owner, p, data.Damage, 0.0)
+				} else if data.OwnerID == "AI_NINGBYE" {
+					gs.applyDamageLocked(nil, p, data.Damage, data.ArmorPenetration)
 				}
 				hitPlayer = true
 				break
+			}
+		}
+		
+		// 3. Check AI Collision (Players hitting AI)
+		if !hitPlayer {
+			for tUID, tEnt := range gs.Entities {
+				if tEnt.Type != EntityTypeNingBye { continue }
+				
+				// Collision
+				dist := Distance(nextPos, tEnt.Pos)
+				// Boss Radius approx 0.6 (1.5x player)
+				if dist < (data.Radius + 0.6) {
+					// Apply Damage to AI
+					gs.applyDamageToAI(tUID, data.Damage, data.OwnerID)
+					hitPlayer = true // Reuse flag to remove projectile
+					break
+				}
 			}
 		}
 
@@ -1493,6 +1588,7 @@ func (gs *GameState) nextPhase() {
 			mcount = gs.Config.Phases.Phase2.MotorsSpawnCount
 		}
 		gs.spawnMotors(mcount)
+		
 		gs.spawnPhaseSupplyDrops(2)
 		gs.spawnOrMoveMerchantForPhase(2)
 		gs.refreshAllPlayersShopStockForPhase(2)
@@ -1502,6 +1598,65 @@ func (gs *GameState) nextPhase() {
 		gs.spawnOrMoveMerchantForPhase(3)
 		gs.refreshAllPlayersShopStockForPhase(3)
 	}
+}
+
+func (gs *GameState) spawnNingByeAI() {
+	// Remove old if any
+	for uid, e := range gs.Entities {
+		if e.Type == EntityTypeNingBye {
+			delete(gs.Entities, uid)
+		}
+	}
+
+	// Stats from Config
+	hp := 300.0
+	armor := 150.0
+	speed := 3.0
+	dmg := 50.0
+	pen := 0.75
+	reload := 0.25
+	sense := 0.75
+	if gs.Config != nil {
+		hp = gs.Config.AI.NingBye.HP
+		armor = gs.Config.AI.NingBye.Armor
+		speed = gs.Config.AI.NingBye.MoveSpeed
+		dmg = gs.Config.AI.NingBye.Damage
+		pen = gs.Config.AI.NingBye.ArmorPenetration
+		reload = gs.Config.AI.NingBye.ReloadTimeSec
+		sense = gs.Config.AI.NingBye.SensingRadiusRatio
+	}
+	
+	// Calc Sensing Radius based on Player Base View
+	baseView := 10.0
+	if gs.Config != nil && gs.Config.Gameplay.BaseViewRadius > 0 {
+		baseView = gs.Config.Gameplay.BaseViewRadius
+	}
+	finalSense := baseView * sense
+
+	pos := gs.Map.GetRandomSpawnPos()
+	uid := NewUID()
+	
+	aiData := NingByeAI{
+		State:            AIStatePatrol,
+		HP:               hp,
+		MaxHP:            hp,
+		Armor:            armor,
+		MaxArmor:         armor,
+		MoveSpeed:        speed,
+		Damage:           dmg,
+		ArmorPenetration: pen,
+		ReloadTimeSec:    reload,
+		SensingRadius:    finalSense,
+	}
+	
+	gs.Entities[uid] = Entity{
+		UID:   uid,
+		Type:  EntityTypeNingBye,
+		Pos:   pos,
+		State: 1,
+		Extra: aiData,
+	}
+	log.Printf("[AI] NingBye Tunk spawned at %v (HP: %.0f, Armor: %.0f)", pos, hp, armor)
 }
 
 func (gs *GameState) spawnPhaseSupplyDrops(phase int) {
@@ -1661,6 +1816,16 @@ func (gs *GameState) GetSnapshot(sessionID string) map[string]interface{} {
 			}
 		}
 	}
+	
+	// AI Radar Pulse
+	if gs.AIPulseTimer > 27.0 {
+		for _, e := range gs.Entities {
+			if e.Type == EntityTypeNingBye {
+				radarBlips = append(radarBlips, Blip{Type: "NING_BYE", Pos: e.Pos})
+			}
+		}
+	}
+
 	if gs.Phase == PhaseEscape {
 		for _, e := range gs.Entities {
 			if e.Type == EntityTypeExit {

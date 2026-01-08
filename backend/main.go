@@ -90,6 +90,8 @@ func main() {
 	mux.HandleFunc("/admin/player/inventory/capacity", handleAdminModifyCapacity)
 	mux.HandleFunc("/admin/player/inventory/item", handleAdminAddItem)
 	mux.HandleFunc("/admin/player/speed", handleAdminModifySpeed)
+	mux.HandleFunc("/admin/player/threat", handleAdminSetThreat)
+	mux.HandleFunc("/admin/ai/command", handleAdminCommandAI)
 
 	// 4. Start Server
 	addr := ":" + *port
