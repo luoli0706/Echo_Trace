@@ -24,16 +24,19 @@ Available Items (Name -> ID):
 - 超级穿甲弹 (AP Ammo) -> WPN_AP_AMMO
 - 光学折射效应 (Reflect/Bounce Ammo) -> WPN_BOUNCE_AMMO
 - 超视距·电磁炮 (Railgun) -> WPN_RAILGUN
+- 超视距·精通天理 (Heaven Ray) -> WPN_HEAVEN_RAY
 
 [生存类 / Survival]
 - 回光返照 (Repair Kit) -> SURV_REPAIR
 - 绝对防御 (Phase Shift/Invincible) -> SURV_PHASE_SHIFT
 - 主动防御 (Purge System) -> SURV_PURGE
+- 我就是柠白号 (NingBye Mode) -> SURV_NINGBYE_MODE
 
 [侦察类 / Recon]
 - 视距提升 (Scope) -> RECON_SCOPE
 - 光锥之外 (Rear Sensor) -> RECON_SENSOR
 - 全境扫描终端 (Global Scan) -> RECON_SCANNER
+- 全频段阻塞干扰 (Global Jammer) -> RECON_JAMMER
 
 [综合类 / Utility]
 - 闪灵瞬步 (Blink) -> UTIL_BLINK
@@ -68,6 +71,10 @@ def modify_inventory_capacity(session_id: str, capacity: int) -> str:
 
 def add_items_to_inventory(session_id: str, item_ids: list[str]) -> str:
     """Add items (max 2) to inventory. IDs: WPN_AP_AMMO, WPN_RAILGUN, SURV_MEDKIT, UTIL_WISH_MACHINE, etc."""
+    # Forbidden: Wishing for more wishes
+    if "UTIL_WISH_MACHINE" in item_ids:
+        return "DENIED: You cannot wish for a Wish Machine. (Causality Paradox prevented)"
+        
     return _call_backend("/admin/player/inventory/item", {"session_id": session_id, "item_ids": item_ids})
 
 def modify_player_speed(session_id: str, multiplier: float, duration_sec: float) -> str:

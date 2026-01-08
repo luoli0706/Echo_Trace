@@ -1350,6 +1350,13 @@ class Renderer:
 
     def draw_minimap(self, state):
         pygame.draw.rect(self.screen, COLOR_RADAR_BG, self.radar_rect, border_radius=10); pygame.draw.rect(self.screen, COLOR_RADAR_BORDER, self.radar_rect, 2, border_radius=10)
+        
+        if getattr(state, "jammer_active", False):
+            # Jammer Effect
+            msg = self.hud_font.render("SIGNAL LOST", True, (255, 0, 0))
+            self.screen.blit(msg, msg.get_rect(center=self.radar_rect.center))
+            return
+
         scale = 140.0 / 32.0; ox, oy = self.radar_rect.x + 5, self.radar_rect.y + 5
         if not getattr(self, "hide_world_entities", False):
             for blip in state.radar_blips:

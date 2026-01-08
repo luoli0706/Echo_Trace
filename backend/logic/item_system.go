@@ -23,22 +23,25 @@ var ItemDB = map[string]Item{
 	"WPN_AP_AMMO":     {ID: "WPN_AP_AMMO", Type: ItemTypeOffense, Name: "AP Ammo", MaxUses: 1, Weight: 2.0, Tier: 1, Value: 150},
 	"WPN_BOUNCE_AMMO": {ID: "WPN_BOUNCE_AMMO", Type: ItemTypeOffense, Name: "Reflect Ammo", MaxUses: 1, Weight: 2.0, Tier: 2, Value: 300},
 	"WPN_RAILGUN":     {ID: "WPN_RAILGUN", Type: ItemTypeOffense, Name: "Railgun", MaxUses: 1, Weight: 4.0, Tier: 3, Value: 600},
+	"WPN_HEAVEN_RAY":  {ID: "WPN_HEAVEN_RAY", Type: ItemTypeOffense, Name: "Heaven Ray", MaxUses: 1, Weight: 6.0, Tier: 4, Value: 2000},
 
 	// Survival
 	"SURV_REPAIR":      {ID: "SURV_REPAIR", Type: ItemTypeSurvival, Name: "Repair Kit", MaxUses: 1, Weight: 1.0, Tier: 1, Value: 100},
 	"SURV_PHASE_SHIFT": {ID: "SURV_PHASE_SHIFT", Type: ItemTypeSurvival, Name: "Phase Shift", MaxUses: 1, Weight: 2.0, Tier: 2, Value: 350},
 	"SURV_PURGE":       {ID: "SURV_PURGE", Type: ItemTypeSurvival, Name: "Purge System", MaxUses: 1, Weight: 2.5, Tier: 3, Value: 500},
+	"SURV_NINGBYE_MODE": {ID: "SURV_NINGBYE_MODE", Type: ItemTypeSurvival, Name: "NingBye Mode", MaxUses: 1, Weight: 5.0, Tier: 4, Value: 2000},
 
 	// Recon
 	"RECON_SCOPE":  {ID: "RECON_SCOPE", Type: ItemTypeRecon, Name: "Scope", MaxUses: 1, Weight: 1.0, Tier: 1, Value: 120},
 	"RECON_SENSOR": {ID: "RECON_SENSOR", Type: ItemTypeRecon, Name: "Rear Sensor", MaxUses: 1, Weight: 1.5, Tier: 2, Value: 250},
 	"RECON_SCANNER": {ID: "RECON_SCANNER", Type: ItemTypeRecon, Name: "Global Scan", MaxUses: 1, Weight: 3.0, Tier: 3, Value: 550},
+	"RECON_JAMMER": {ID: "RECON_JAMMER", Type: ItemTypeRecon, Name: "Global Jammer", MaxUses: 1, Weight: 4.0, Tier: 4, Value: 1800},
 
 	// Utility (Scavenge/Util renamed in internal logic but keep type consistent)
 	"UTIL_BLINK":   {ID: "UTIL_BLINK", Type: ItemTypeScavenge, Name: "Blink", MaxUses: 1, Weight: 1.5, Tier: 1, Value: 150},
 	"UTIL_RADAR":   {ID: "UTIL_RADAR", Type: ItemTypeScavenge, Name: "Pulse Radar", MaxUses: 1, Weight: 1.5, Tier: 2, Value: 280},
 	"UTIL_STEALTH": {ID: "UTIL_STEALTH", Type: ItemTypeScavenge, Name: "Stealth Cloak", MaxUses: 1, Weight: 2.0, Tier: 3, Value: 600},
-	"UTIL_WISH_MACHINE": {ID: "UTIL_WISH_MACHINE", Type: ItemTypeScavenge, Name: "Wish Machine", MaxUses: 1, Weight: 5.0, Tier: 3, Value: 1000},
+	"UTIL_WISH_MACHINE": {ID: "UTIL_WISH_MACHINE", Type: ItemTypeScavenge, Name: "Wish Machine", MaxUses: 1, Weight: 5.0, Tier: 4, Value: 3000},
 }
 
 type weightedChoice[T any] struct {
@@ -287,6 +290,22 @@ func (gs *GameState) generateShopStock(phaseIdx int, tactic string) []string {
 
 	stock := make([]string, 0, count)
 	seen := map[string]bool{}
+	
+	// Phase 3: 10% Chance for T4 Item
+	if phaseIdx >= 3 && rand.Float64() < 0.10 {
+		t4Items := []string{}
+		for id, it := range ItemDB {
+			if it.Tier == 4 {
+				t4Items = append(t4Items, id)
+			}
+		}
+		if len(t4Items) > 0 {
+			id := t4Items[rand.Intn(len(t4Items))]
+			stock = append(stock, id)
+			seen[id] = true
+		}
+	}
+
 	// Try to build a diverse stock; cap attempts to avoid infinite loops.
 	for attempts := 0; len(stock) < count && attempts < 200; attempts++ {
 		cat := gs.pickLootCategory(phaseIdx, tactic)
@@ -356,6 +375,23 @@ func (gs *GameState) SpawnSupplyDrop(pos Vector2, phase int) {
 	}
 
 	items := []Item{}
+	
+	// 5% Chance for T4 Item (Legendary)
+	if rand.Float64() < 0.05 {
+		t4Items := []string{}
+		for id, it := range ItemDB {
+			if it.Tier == 4 {
+				t4Items = append(t4Items, id)
+			}
+		}
+		if len(t4Items) > 0 {
+			id := t4Items[rand.Intn(len(t4Items))]
+			it := ItemDB[id]
+			it.UID = NewUID()
+			items = append(items, it)
+		}
+	}
+
 	for i := 0; i < int(count); i++ {
 		// Bias by current room tactic/phase, but cap to drop tier.
 		phaseIdx := gs.currentLootPhaseIndex()

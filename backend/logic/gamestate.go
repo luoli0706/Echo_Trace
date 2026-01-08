@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"math/rand"
 	"sync"
 	"time"
 )
@@ -38,6 +39,7 @@ type GameState struct {
 	RespawnTimer float64
 	PulseTimer   float64
 	AIPulseTimer float64 // For NingBye Radar Pulse
+	GlobalJammerUntil time.Time // T4 Jammer
 	GlobalEvents []GlobalEvent
 	MotorsFixed  int
 	TotalKills   int
@@ -667,6 +669,17 @@ func (gs *GameState) RecalculateStats(p *Player) {
 	p.MaxHP = baseHP * maxHPMult
 	p.ViewRadius = (gs.Config.Gameplay.BaseViewRadius * viewMult) + viewBonus
 	p.HearRadius = (baseHear * hearMult) + hearBonus
+	
+	// T4 NingBye Mode Override
+	if now.Before(p.BuffNingByeUntil) {
+		// Use Boss Config
+		p.MaxHP = 300
+		if gs.Config != nil { p.MaxHP = gs.Config.AI.NingBye.HP }
+		p.MaxArmor = 150
+		if gs.Config != nil { p.MaxArmor = gs.Config.AI.NingBye.Armor }
+		// Heal up to new max if not there? 
+		// Item use logic usually handles the heal.
+	}
 
 	// Weight always depends on what you carry.
 	totalWeight := 0.0
@@ -978,8 +991,38 @@ func (gs *GameState) applyDamageToAI(aiUID string, damage float64, attackerID st
 		data.HP = 0
 		// AI Death Logic
 		gs.addEvent("BOSS_DEFEATED", "The NingBye Tunk has been destroyed!")
-		// Drop loot?
-		gs.SpawnSupplyDrop(ent.Pos, 3) // Drop Tier 3 loot
+		// Drop loot: Always T3
+		gs.SpawnSupplyDrop(ent.Pos, 3) 
+		
+		// 20% Chance for T4
+		if rand.Float64() < 0.20 {
+			// Pick random T4
+			t4Items := []string{}
+			for id, it := range ItemDB {
+				if it.Tier == 4 {
+					t4Items = append(t4Items, id)
+				}
+			}
+			if len(t4Items) > 0 {
+				id := t4Items[rand.Intn(len(t4Items))]
+				item := ItemDB[id]
+				item.UID = NewUID()
+				// Offset slightly
+				pos := ent.Pos
+				pos.X += (rand.Float64() - 0.5)
+				pos.Y += (rand.Float64() - 0.5)
+				
+				gs.Entities[item.UID] = Entity{
+					UID:   item.UID,
+					Type:  EntityTypeItemDrop,
+					Pos:   pos,
+					State: 1,
+					Extra: item,
+				}
+				log.Printf("Boss dropped Legendary Item: %s", item.Name)
+			}
+		}
+		
 		delete(gs.Entities, aiUID)
 	} else {
 		// Update Entity
@@ -1791,53 +1834,59 @@ func (gs *GameState) GetSnapshot(sessionID string) map[string]interface{} {
 
 	// Radar Logic: Calculate Blips
 	radarBlips := make([]Blip, 0)
-
-	// Phase 2: Pulse Motors (active window is configurable)
-	pulseActiveWindow := 5.0
-	pulseInterval := 15.0
-	if gs.Config != nil {
-		if gs.Config.Phases.Phase2.PulseActiveWindowSec > 0 {
-			pulseActiveWindow = float64(gs.Config.Phases.Phase2.PulseActiveWindowSec)
-		}
-		if gs.Config.Phases.Phase2.PulseIntervalSec > 0 {
-			pulseInterval = float64(gs.Config.Phases.Phase2.PulseIntervalSec)
-		}
-	}
-	startThreshold := pulseInterval - pulseActiveWindow
-	if startThreshold < 0 {
-		startThreshold = 0
-	}
-	isPulseActive := gs.Phase == PhaseConflict && gs.PulseTimer > startThreshold
-
-	if isPulseActive {
-		for _, e := range gs.Entities {
-			if e.Type == EntityTypeMotor {
-				radarBlips = append(radarBlips, Blip{Type: "MOTOR", Pos: e.Pos})
-			}
-		}
-	}
 	
-	// AI Radar Pulse
-	if gs.AIPulseTimer > 27.0 {
-		for _, e := range gs.Entities {
-			if e.Type == EntityTypeNingBye {
-				radarBlips = append(radarBlips, Blip{Type: "NING_BYE", Pos: e.Pos})
+	// T4 Jammer Check
+	isJammerActive := time.Now().Before(gs.GlobalJammerUntil)
+	if isJammerActive {
+		// No blips if jammed
+	} else {
+		// Phase 2: Pulse Motors (active window is configurable)
+		pulseActiveWindow := 5.0
+		pulseInterval := 15.0
+		if gs.Config != nil {
+			if gs.Config.Phases.Phase2.PulseActiveWindowSec > 0 {
+				pulseActiveWindow = float64(gs.Config.Phases.Phase2.PulseActiveWindowSec)
+			}
+			if gs.Config.Phases.Phase2.PulseIntervalSec > 0 {
+				pulseInterval = float64(gs.Config.Phases.Phase2.PulseIntervalSec)
 			}
 		}
-	}
+		startThreshold := pulseInterval - pulseActiveWindow
+		if startThreshold < 0 {
+			startThreshold = 0
+		}
+		isPulseActive := gs.Phase == PhaseConflict && gs.PulseTimer > startThreshold
 
-	if gs.Phase == PhaseEscape {
-		for _, e := range gs.Entities {
-			if e.Type == EntityTypeExit {
-				radarBlips = append(radarBlips, Blip{Type: "EXIT", Pos: e.Pos})
+		if isPulseActive {
+			for _, e := range gs.Entities {
+				if e.Type == EntityTypeMotor {
+					radarBlips = append(radarBlips, Blip{Type: "MOTOR", Pos: e.Pos})
+				}
 			}
 		}
-	}
+		
+		// AI Radar Pulse
+		if gs.AIPulseTimer > 27.0 {
+			for _, e := range gs.Entities {
+				if e.Type == EntityTypeNingBye {
+					radarBlips = append(radarBlips, Blip{Type: "NING_BYE", Pos: e.Pos})
+				}
+			}
+		}
 
-	// Always Show Supply Drops
-	for _, e := range gs.Entities {
-		if e.Type == EntityTypeSupplyDrop {
-			radarBlips = append(radarBlips, Blip{Type: "SUPPLY_DROP", Pos: e.Pos})
+		if gs.Phase == PhaseEscape {
+			for _, e := range gs.Entities {
+				if e.Type == EntityTypeExit {
+					radarBlips = append(radarBlips, Blip{Type: "EXIT", Pos: e.Pos})
+				}
+			}
+		}
+
+		// Always Show Supply Drops
+		for _, e := range gs.Entities {
+			if e.Type == EntityTypeSupplyDrop {
+				radarBlips = append(radarBlips, Blip{Type: "SUPPLY_DROP", Pos: e.Pos})
+			}
 		}
 	}
 
@@ -1890,6 +1939,7 @@ func (gs *GameState) GetSnapshot(sessionID string) map[string]interface{} {
 		"phase":       gs.Phase,
 		"time_left":   gs.PhaseTimer,
 		"total_kills": gs.TotalKills,
+		"jammer_active": isJammerActive,
 		"events":      gs.GlobalEvents,
 		"self":        p,
 		"vision": map[string]interface{}{

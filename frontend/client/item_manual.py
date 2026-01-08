@@ -133,12 +133,17 @@ ITEM_MANUAL = {
     "UTIL_RADAR": {"abbr": "RAD", "name": "便携雷达", "use": "显示周围单位位置（未实装）。"},
     "UTIL_STEALTH": {"abbr": "STH", "name": "光学迷彩", "use": "15秒内隐形（攻击会显形）。"},
     "UTIL_WISH_MACHINE": {"abbr": "WIS", "name": "万能许愿机", "use": "向神明（AI）许愿。"},
+    
+    # T4 Legendary
+    "WPN_HEAVEN_RAY": {"abbr": "RAY", "name": "精通天理", "use": "召唤轨道打击，对目标区域造成毁灭性打击。"},
+    "SURV_NINGBYE_MODE": {"abbr": "BOS", "name": "我就是柠白号", "use": "化身为Boss，获得极高生命值和护甲。"},
+    "RECON_JAMMER": {"abbr": "JAM", "name": "全频段阻塞", "use": "屏蔽全图所有玩家的雷达信号。"},
 }
 
 CATEGORY_ORDER = [
-    ("攻击类", ["WPN_SHOCK_T1", "WPN_STONE", "WPN_KNIFE_T2", "WPN_STUN_GRENADE", "WPN_TRACK_DART", "WPN_EMP_MINE", "WPN_AP_AMMO", "WPN_BOUNCE_AMMO", "WPN_RAILGUN"]),
-    ("生存类", ["SURV_BANDAGE", "SURV_ENERGY_BAR", "SURV_ADRENALINE", "SURV_SILENT_PAD", "SURV_JAMMER", "SURV_ARMOR_LIGHT", "SURV_REPAIR", "SURV_PHASE_SHIFT", "SURV_PURGE"]),
-    ("侦察类", ["RECON_AMP_T1", "RECON_FLASHLIGHT", "RECON_HEARTBEAT", "RECON_DRONE_TAG", "RECON_GLOBAL_SCAN", "RECON_XRAY", "RECON_SCOPE", "RECON_SENSOR", "RECON_SCANNER"]),
+    ("攻击类", ["WPN_SHOCK_T1", "WPN_STONE", "WPN_KNIFE_T2", "WPN_STUN_GRENADE", "WPN_TRACK_DART", "WPN_EMP_MINE", "WPN_AP_AMMO", "WPN_BOUNCE_AMMO", "WPN_RAILGUN", "WPN_HEAVEN_RAY"]),
+    ("生存类", ["SURV_BANDAGE", "SURV_ENERGY_BAR", "SURV_ADRENALINE", "SURV_SILENT_PAD", "SURV_JAMMER", "SURV_ARMOR_LIGHT", "SURV_REPAIR", "SURV_PHASE_SHIFT", "SURV_PURGE", "SURV_NINGBYE_MODE"]),
+    ("侦察类", ["RECON_AMP_T1", "RECON_FLASHLIGHT", "RECON_HEARTBEAT", "RECON_DRONE_TAG", "RECON_GLOBAL_SCAN", "RECON_XRAY", "RECON_SCOPE", "RECON_SENSOR", "RECON_SCANNER", "RECON_JAMMER"]),
     ("搜索类", ["SCAV_BACKPACK_M", "SCAV_DETECTOR", "SCAV_DECODER", "SCAV_MASTER_KEY", "UTIL_BLINK", "UTIL_RADAR", "UTIL_STEALTH", "UTIL_WISH_MACHINE"]),
 ]
 

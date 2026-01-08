@@ -36,6 +36,8 @@ class GameState:
         # Global State
         self.phase = 0 # Default Init
         self.time_left = 0
+        self.total_kills = 0
+        self.jammer_active = False
         self.events = []
         self.radar_blips = []
         self.sound_events = []
@@ -49,6 +51,7 @@ class GameState:
         self.phase = payload.get("phase", 0)
         self.time_left = payload.get("time_left", 0)
         self.total_kills = payload.get("total_kills", 0)
+        self.jammer_active = payload.get("jammer_active", False)
         evts = payload.get("events")
         self.events = evts if evts is not None else []
         

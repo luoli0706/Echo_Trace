@@ -27,6 +27,9 @@ type ProjectileData struct {
 	BouncesLeft int       `json:"bounces_left"`
 	// AI Specifics
 	ArmorPenetration float64 `json:"armor_penetration"` // 0.0 to 1.0
+	// T4 Specifics
+	OnDeathExplode   bool    `json:"on_death_explode"`
+	ExplosionRadius  float64 `json:"explosion_radius"`
 }
 
 // NingByeAI holds the state for the boss unit
@@ -126,6 +129,7 @@ type Player struct {
 	BuffInvisibleUntil       time.Time `json:"buff_invisible_until"`  // Stealth
 	BuffVisionInvertUntil    time.Time `json:"buff_vision_invert_until"` // T2 Recon
 	BuffScanUntil            time.Time `json:"buff_scan_until"` // T3 Recon (user)
+	BuffNingByeUntil         time.Time `json:"buff_ning_bye_until"` // T4 Survival
 	
 	// Ammo State
 	AmmoType      string    `json:"ammo_type"` // "", "AP", "BOUNCE"
