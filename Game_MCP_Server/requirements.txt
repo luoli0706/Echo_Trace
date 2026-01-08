@@ -1,0 +1,7 @@
+fastmcp
+requests
+python-dotenv
+fastapi
+uvicorn
+starlette<0.39.0
+websockets<15.0.1

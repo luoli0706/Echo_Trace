@@ -118,13 +118,28 @@ ITEM_MANUAL = {
         "name": "万能钥匙",
         "use": "开启上锁补给箱（当前为简化：给予少量资金）。",
     },
+    
+    # New Backend Items
+    "WPN_AP_AMMO": {"abbr": "AP", "name": "穿甲弹", "use": "装填后下3次射击伤害提升(40)，穿透护甲。"},
+    "WPN_BOUNCE_AMMO": {"abbr": "BNC", "name": "跳弹", "use": "装填后下3次射击可弹射多次，伤害25。"},
+    "WPN_RAILGUN": {"abbr": "RGN", "name": "磁轨炮", "use": "装填后下1次射击为即时命中高伤激光(75)。"},
+    "SURV_REPAIR": {"abbr": "REP", "name": "维修包", "use": "回复30%生命值并修复20点护甲。"},
+    "SURV_PHASE_SHIFT": {"abbr": "PHS", "name": "相位转移", "use": "3秒内免疫所有伤害。"},
+    "SURV_PURGE": {"abbr": "PUR", "name": "净化系统", "use": "清除负面状态并短时无敌。"},
+    "RECON_SCOPE": {"abbr": "SCP", "name": "战术瞄具", "use": "15秒内视野半径增加20%。"},
+    "RECON_SENSOR": {"abbr": "SNR", "name": "后视传感器", "use": "10秒内获得后方视野。"},
+    "RECON_SCANNER": {"abbr": "SCN", "name": "全域扫描", "use": "向所有人广播最近敌人的位置。"},
+    "UTIL_BLINK": {"abbr": "BLK", "name": "闪烁模块", "use": "向朝向瞬间传送2米。"},
+    "UTIL_RADAR": {"abbr": "RAD", "name": "便携雷达", "use": "显示周围单位位置（未实装）。"},
+    "UTIL_STEALTH": {"abbr": "STH", "name": "光学迷彩", "use": "15秒内隐形（攻击会显形）。"},
+    "UTIL_WISH_MACHINE": {"abbr": "WIS", "name": "万能许愿机", "use": "向神明（AI）许愿。"},
 }
 
 CATEGORY_ORDER = [
-    ("攻击类", ["WPN_SHOCK_T1", "WPN_STONE", "WPN_KNIFE_T2", "WPN_STUN_GRENADE", "WPN_TRACK_DART", "WPN_EMP_MINE"]),
-    ("生存类", ["SURV_BANDAGE", "SURV_ENERGY_BAR", "SURV_ADRENALINE", "SURV_SILENT_PAD", "SURV_JAMMER", "SURV_ARMOR_LIGHT"]),
-    ("侦察类", ["RECON_AMP_T1", "RECON_FLASHLIGHT", "RECON_HEARTBEAT", "RECON_DRONE_TAG", "RECON_GLOBAL_SCAN", "RECON_XRAY"]),
-    ("搜索类", ["SCAV_BACKPACK_M", "SCAV_DETECTOR", "SCAV_DECODER", "SCAV_MASTER_KEY"]),
+    ("攻击类", ["WPN_SHOCK_T1", "WPN_STONE", "WPN_KNIFE_T2", "WPN_STUN_GRENADE", "WPN_TRACK_DART", "WPN_EMP_MINE", "WPN_AP_AMMO", "WPN_BOUNCE_AMMO", "WPN_RAILGUN"]),
+    ("生存类", ["SURV_BANDAGE", "SURV_ENERGY_BAR", "SURV_ADRENALINE", "SURV_SILENT_PAD", "SURV_JAMMER", "SURV_ARMOR_LIGHT", "SURV_REPAIR", "SURV_PHASE_SHIFT", "SURV_PURGE"]),
+    ("侦察类", ["RECON_AMP_T1", "RECON_FLASHLIGHT", "RECON_HEARTBEAT", "RECON_DRONE_TAG", "RECON_GLOBAL_SCAN", "RECON_XRAY", "RECON_SCOPE", "RECON_SENSOR", "RECON_SCANNER"]),
+    ("搜索类", ["SCAV_BACKPACK_M", "SCAV_DETECTOR", "SCAV_DECODER", "SCAV_MASTER_KEY", "UTIL_BLINK", "UTIL_RADAR", "UTIL_STEALTH", "UTIL_WISH_MACHINE"]),
 ]
 
 def get_item_abbr(item_id: str) -> str:

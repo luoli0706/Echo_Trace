@@ -1,6 +1,8 @@
 import sys
 import queue
 import json
+import threading
+import urllib.request
 from pathlib import Path
 import os
 import pygame
@@ -534,6 +536,47 @@ def main():
 
             # --- State: GAME ---
             if renderer.state == "GAME":
+                # Wish Input Handling (Modal)
+                if renderer.wish_input_active:
+                    if event.type == pygame.KEYDOWN:
+                        if event.key == pygame.K_ESCAPE:
+                            renderer.wish_input_active = False
+                            renderer.wish_input_text = ""
+                        elif event.key == pygame.K_BACKSPACE:
+                            renderer.wish_input_text = renderer.wish_input_text[:-1]
+                        elif event.key == pygame.K_RETURN:
+                            wish = renderer.wish_input_text.strip()
+                            if wish:
+                                renderer.wish_processing_until = time.time() + 10.0
+                                # Send Wish Async
+                                def send_wish(url, sid, w):
+                                    try:
+                                        # Use http instead of ws, assuming same host/port logic or configured separately.
+                                        # Currently renderer.server_input is like "ws://host:port/ws"
+                                        # We need "http://host:port/api/wish"
+                                        base = url.replace("ws://", "http://").replace("wss://", "https://").replace("/ws", "")
+                                        api_url = f"{base}/api/wish"
+                                        data = json.dumps({"session_id": sid, "wish": w}).encode('utf-8')
+                                        req = urllib.request.Request(api_url, data=data, headers={'Content-Type': 'application/json'})
+                                        with urllib.request.urlopen(req) as f:
+                                            print(f"Wish Sent: {f.read().decode('utf-8')}")
+                                    except Exception as e:
+                                        print(f"Wish Error: {e}")
+
+                                threading.Thread(target=send_wish, args=(renderer.server_input, persisted_session_id, wish)).start()
+                            
+                            renderer.wish_input_active = False
+                            renderer.wish_input_text = ""
+                        # Clipboard Paste for Wish
+                        elif event.mod & pygame.KMOD_CTRL and event.key == pygame.K_v:
+                            clip = _clip_get_text().replace("\r", "").replace("\n", "").strip()
+                            renderer.wish_input_text = _append_text(renderer.wish_input_text, clip, max_len=20)
+
+                    elif event.type == pygame.TEXTINPUT:
+                        renderer.wish_input_text = _append_text(renderer.wish_input_text, event.text, max_len=20)
+                    
+                    continue # Block other game inputs
+
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
                         # Lobby Back Button
@@ -555,9 +598,6 @@ def main():
                         renderer.pause_open()
                         continue
                     
-                    if event.key == pygame.K_F9 and renderer.dev_mode:
-                        if net: net.send({"type": 9001, "payload": {}})
-
                     # Gameplay Inputs
                     if not renderer.show_shop:
                         if event.key == pygame.K_w: input_dir[1] = -1
@@ -591,6 +631,9 @@ def main():
                         elif event.key >= pygame.K_1 and event.key <= pygame.K_6:
                             slot = event.key - pygame.K_1
                             mods = pygame.key.get_mods()
+                            
+                            print(f"[DEBUG] Key {slot+1} pressed. Mods: {mods}. Inventory Len: {len(state.my_inventory)}")
+
                             if state.phase == 0 and not state.tactic_chosen:
                                 if event.key <= pygame.K_3:
                                     t = {pygame.K_1: "RECON", pygame.K_2: "DEFENSE", pygame.K_3: "TRAP"}.get(event.key)
@@ -602,7 +645,29 @@ def main():
                                 elif mods & pygame.KMOD_CTRL or mods & pygame.KMOD_LCTRL:
                                     if net: net.send({"type": 2008, "payload": {"slot_index": slot}})
                                 else:
-                                    if net: net.send({"type": 2002, "payload": {"slot_index": slot}})
+                                    # Check for Wish Machine
+                                    is_wish = False
+                                    try:
+                                        if slot < len(state.my_inventory):
+                                            item = state.my_inventory[slot]
+                                            iid = item.get("id") or item.get("ID")
+                                            print(f"[DEBUG] Slot {slot} Item: {iid}")
+                                            if iid == "UTIL_WISH_MACHINE":
+                                                is_wish = True
+                                        else:
+                                            print(f"[DEBUG] Slot {slot} is empty.")
+                                    except Exception as e:
+                                        print(f"[DEBUG] Error checking item: {e}")
+
+                                    if is_wish:
+                                        print("[DEBUG] Wish Machine Activated!")
+                                        renderer.wish_input_active = True
+                                        renderer.wish_input_text = ""
+                                        # Stop player movement to avoid sliding while typing
+                                        input_dir[0] = 0
+                                        input_dir[1] = 0
+                                    else:
+                                        if net: net.send({"type": 2002, "payload": {"slot_index": slot}})
                     else:
                         # Shop is open
                         if event.key == pygame.K_f or event.key == pygame.K_ESCAPE: renderer.show_shop = False
@@ -638,7 +703,30 @@ def main():
                         continue
 
                     if renderer.pause_view() != "root":
-                        renderer.handle_click(event.pos)
+                        # Detect Clicks in Sub-menus
+                        action_or_result = renderer.handle_click(event.pos)
+                        
+                        if action_or_result == "GRANT_WISH":
+                            print(f"[Client] Granting Wish Machine...")
+                            def grant_dev_item(url, sid):
+                                try:
+                                    if not url or not sid: return
+                                    # Handle both ws:// and http:// cases
+                                    base = url.replace("ws://", "http://").replace("wss://", "https://").replace("/ws", "")
+                                    # Fallback if no schema
+                                    if not base.startswith("http"): base = "http://" + base
+                                        
+                                    api_url = f"{base}/admin/player/inventory/item"
+                                    # Must use item_ids list
+                                    data = json.dumps({"session_id": sid, "item_ids": ["UTIL_WISH_MACHINE"]}).encode('utf-8')
+                                    req = urllib.request.Request(api_url, data=data, headers={'Content-Type': 'application/json'})
+                                    with urllib.request.urlopen(req, timeout=3.0) as f:
+                                        print(f"[Client] Grant Response: {f.read().decode('utf-8')}")
+                                except Exception as e:
+                                    print(f"[Client] Grant Failed: {e}")
+                            
+                            threading.Thread(target=grant_dev_item, args=(renderer.server_input, persisted_session_id), daemon=True).start()
+                            
                     else:
                         action = renderer.handle_pause_click(event.pos)
                         if action == "resume":
@@ -695,6 +783,14 @@ def main():
 
         # Network
         if net:
+            # Check for sudden disconnect
+            if not getattr(net, "connected", False) and renderer.state == "GAME":
+                err = getattr(net, "last_error", "Unknown")
+                print(f"[Client] Disconnected unexpectedly! Error: {err}")
+                renderer.menu_message = f"连接断开: {err}"
+                renderer.state = "MENU"
+                state = GameState()
+                
             while not recv_q.empty():
                 msg = recv_q.get()
                 mt, pl = msg.get("type"), msg.get("payload")

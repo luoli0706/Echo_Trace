@@ -83,6 +83,14 @@ func main() {
 		w.Write([]byte("OK"))
 	})
 
+	// Admin / Cheat APIs
+	mux.HandleFunc("/api/wish", handleWish)
+	mux.HandleFunc("/admin/player/health", handleAdminModifyHealth)
+	mux.HandleFunc("/admin/player/armor", handleAdminModifyArmor)
+	mux.HandleFunc("/admin/player/inventory/capacity", handleAdminModifyCapacity)
+	mux.HandleFunc("/admin/player/inventory/item", handleAdminAddItem)
+	mux.HandleFunc("/admin/player/speed", handleAdminModifySpeed)
+
 	// 4. Start Server
 	addr := ":" + *port
 	log.Printf("Echo Trace Server listening on %s", addr)

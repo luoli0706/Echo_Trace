@@ -1,5 +1,7 @@
 import pygame
 import math, time, os, json
+import threading
+import urllib.request
 from datetime import datetime
 from client.config import *
 from client.i18n import i18n
@@ -110,6 +112,32 @@ class Renderer:
             "quit": pygame.Rect(WINDOW_WIDTH//2 + 10, WINDOW_HEIGHT//2 + 50, 200, 50),
         }
         self.menu_rects = {}; self.pulse_start_time = 0
+        
+        # Wish Machine UI State
+        self.wish_input_active = False
+        self.wish_input_text = ""
+        self.wish_modal_rect = pygame.Rect(WINDOW_WIDTH//2 - 200, WINDOW_HEIGHT//2 - 100, 400, 200)
+        self.wish_processing_until = 0.0
+
+    def draw_wish_processing(self):
+        import time
+        if time.time() > self.wish_processing_until:
+            return
+            
+        # Draw a small glowing notification at the top
+        txt = "万能许愿机正在响应你的愿望..."
+        # Pulsing effect
+        alpha = int(155 + 100 * math.sin(time.time() * 5))
+        surf = self.font.render(txt, True, (255, 0, 255))
+        surf.set_alpha(alpha)
+        rect = surf.get_rect(center=(WINDOW_WIDTH//2, 100))
+        
+        # Background bar
+        bg_rect = pygame.Rect(rect.x - 20, rect.y - 10, rect.width + 40, rect.height + 20)
+        s = pygame.Surface((bg_rect.width, bg_rect.height), pygame.SRCALPHA)
+        s.fill((0, 0, 0, 150))
+        self.screen.blit(s, bg_rect)
+        self.screen.blit(surf, rect)
 
     def _deep_copy(self, obj):
         try:
@@ -931,7 +959,7 @@ class Renderer:
                 self.draw_armor_bar(sx-half, sy-half-9, state.my_armor, state.my_max_armor)
             self.draw_hp_bar(sx-half, sy-half-5, state.my_hp, state.my_max_hp)
         # Fog-of-war overlay. In spectator mode, show full map/world without fog.
-        if not self.dev_mode and not (self.spectator_mode and getattr(state, "is_extracted", False)):
+        if not (self.spectator_mode and getattr(state, "is_extracted", False)):
             # Keep outside-FOV dark; inside FOV wedge fully visible.
             # Alpha 180 = ~70% opacity
             self.fog_surf.fill((0, 0, 0, 180))
@@ -946,6 +974,8 @@ class Renderer:
         elif state.my_hp <= 0: self.draw_death_overlay(state)
         if getattr(state, "is_extracted", False) and not self.spectator_mode: self.draw_spectator_overlay()
         if self.show_shop: self.draw_shop_menu(state)
+        if self.wish_input_active: self.draw_wish_modal()
+        self.draw_wish_processing()
         if self.state == "PAUSE":
             self.draw_pause_menu()
             view = self.pause_view()
@@ -955,6 +985,33 @@ class Renderer:
                 self.draw_help_menu()
             elif view == "item_manual":
                 self.draw_item_manual_menu()
+
+    def draw_wish_modal(self):
+        # Overlay
+        overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 180))
+        self.screen.blit(overlay, (0, 0))
+        
+        # Box
+        rect = self.wish_modal_rect
+        pygame.draw.rect(self.screen, COLOR_MENU_BG, rect, border_radius=10)
+        pygame.draw.rect(self.screen, (255, 0, 255), rect, 2, border_radius=10)
+        
+        # Title
+        t = self.font.render("万能许愿机", True, (255, 0, 255))
+        self.screen.blit(t, t.get_rect(center=(rect.centerx, rect.y + 30)))
+        
+        # Hint
+        h = self.hud_font.render("请输入愿望 (Max 20字, ENTER发送, ESC取消):", True, (200, 200, 200))
+        self.screen.blit(h, h.get_rect(center=(rect.centerx, rect.y + 70)))
+        
+        # Input Box
+        in_rect = pygame.Rect(rect.x + 20, rect.y + 100, rect.width - 40, 40)
+        pygame.draw.rect(self.screen, (50, 50, 60), in_rect)
+        pygame.draw.rect(self.screen, (255, 0, 255), in_rect, 1)
+        
+        txt_surf = self.hud_font.render(self.wish_input_text + "|", True, (255, 255, 255))
+        self.screen.blit(txt_surf, (in_rect.x + 10, in_rect.y + 10))
 
     def draw_connect(self):
         self.screen.fill(COLOR_BG); t = self.font.render(self.t("CONNECT_TITLE"), True, (0, 255, 255))
@@ -1368,8 +1425,8 @@ class Renderer:
     def draw_settings_menu(self):
         pygame.draw.rect(self.screen, COLOR_MENU_BG, self.settings_rect, border_radius=10); pygame.draw.rect(self.screen, (255,255,255), self.settings_rect, 2, border_radius=10)
         t = self.font.render(self.t("SETTINGS_TITLE"), True, (255,255,255)); self.screen.blit(t, (self.settings_rect.x+20, self.settings_rect.y+20))
-        pygame.draw.rect(self.screen, (0,255,0) if self.dev_mode else (100,100,100), self.dev_mode_rect, 2)
-        self.screen.blit(self.hud_font.render(f"{self.t('LBL_DEV_MODE')}: {'ON' if self.dev_mode else 'OFF'}", True, (255,255,255)), (self.dev_mode_rect.x+10, self.dev_mode_rect.y+5))
+        
+        # Lang Toggle
         pygame.draw.rect(self.screen, (0,255,255), self.lang_rect, 2)
         self.screen.blit(self.hud_font.render(f"{self.t('LBL_LANG')}", True, (255,255,255)), (self.lang_rect.x+10, self.lang_rect.y+5))
 
@@ -1381,6 +1438,13 @@ class Renderer:
         self.screen.blit(self.hud_font.render("+", True, (255,255,255)), (self.sens_plus_rect.x+14, self.sens_plus_rect.y+5))
         sens_txt = f"{self.t('LBL_MOUSE_SENS')}: {self.mouse_sensitivity:.1f}"
         self.screen.blit(self.hud_font.render(sens_txt, True, (255,255,255)), (self.sens_value_rect.x+10, self.sens_value_rect.y+5))
+
+        # Grant Wish Machine Button (Replaces Dev Mode)
+        self.grant_wish_rect = pygame.Rect(self.settings_rect.x + 30, self.settings_rect.y + 180, 240, 30)
+        pygame.draw.rect(self.screen, (100, 0, 100), self.grant_wish_rect, border_radius=5)
+        pygame.draw.rect(self.screen, (255, 0, 255), self.grant_wish_rect, 1, border_radius=5)
+        gw_txt = self.hud_font.render("获得一个许愿机", True, (255, 200, 255))
+        self.screen.blit(gw_txt, gw_txt.get_rect(center=self.grant_wish_rect.center))
 
         pygame.draw.rect(self.screen, (200, 50, 50), self.back_btn_rect, border_radius=5); pygame.draw.rect(self.screen, (255, 255, 255), self.back_btn_rect, 2, border_radius=5)
         self.screen.blit(self.hud_font.render("BACK", True, (255,255,255)), (self.back_btn_rect.x+40, self.back_btn_rect.y+10))
@@ -1530,7 +1594,8 @@ class Renderer:
         if self.state == "PAUSE":
             view = self.pause_view()
             if view == "settings":
-                if self.dev_mode_rect.collidepoint(pos): self.dev_mode = not self.dev_mode; return True
+                if getattr(self, "grant_wish_rect", None) and self.grant_wish_rect.collidepoint(pos):
+                    return "GRANT_WISH"
                 if self.lang_rect.collidepoint(pos): i18n.set_lang("en" if i18n.lang == "zh" else "zh"); return True
                 if self.sens_minus_rect.collidepoint(pos):
                     self.mouse_sensitivity = max(0.1, round(self.mouse_sensitivity - 0.1, 1)); return True

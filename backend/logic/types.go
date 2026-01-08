@@ -66,6 +66,7 @@ type Player struct {
 	Tactic       string  `json:"tactic"`
 
 	InventoryCap int `json:"inventory_cap"`
+	ExtraInvCap  int `json:"extra_inv_cap"` // Permanent bonus from Admin/Upgrades
 
 	MaxWeight float64 `json:"max_weight"`
 	Weight    float64 `json:"weight"`

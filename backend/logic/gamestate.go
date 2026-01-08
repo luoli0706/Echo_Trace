@@ -657,7 +657,7 @@ func (gs *GameState) RecalculateStats(p *Player) {
 		speedBuffMult = p.BuffSpeedMult
 	}
 
-	p.InventoryCap = invCap + invBonus
+	p.InventoryCap = invCap + invBonus + p.ExtraInvCap
 	p.MaxWeight = baseMaxWeight + maxWeightBonus
 	p.MaxHP = baseHP * maxHPMult
 	p.ViewRadius = (gs.Config.Gameplay.BaseViewRadius * viewMult) + viewBonus

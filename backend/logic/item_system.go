@@ -38,6 +38,7 @@ var ItemDB = map[string]Item{
 	"UTIL_BLINK":   {ID: "UTIL_BLINK", Type: ItemTypeScavenge, Name: "Blink", MaxUses: 1, Weight: 1.5, Tier: 1, Value: 150},
 	"UTIL_RADAR":   {ID: "UTIL_RADAR", Type: ItemTypeScavenge, Name: "Pulse Radar", MaxUses: 1, Weight: 1.5, Tier: 2, Value: 280},
 	"UTIL_STEALTH": {ID: "UTIL_STEALTH", Type: ItemTypeScavenge, Name: "Stealth Cloak", MaxUses: 1, Weight: 2.0, Tier: 3, Value: 600},
+	"UTIL_WISH_MACHINE": {ID: "UTIL_WISH_MACHINE", Type: ItemTypeScavenge, Name: "Wish Machine", MaxUses: 1, Weight: 5.0, Tier: 3, Value: 1000},
 }
 
 type weightedChoice[T any] struct {
