@@ -132,7 +132,8 @@ ITEM_MANUAL = {
     "UTIL_BLINK": {"abbr": "BLK", "name": "闪烁模块", "use": "向朝向瞬间传送2米。"},
     "UTIL_RADAR": {"abbr": "RAD", "name": "便携雷达", "use": "显示周围单位位置（未实装）。"},
     "UTIL_STEALTH": {"abbr": "STH", "name": "光学迷彩", "use": "15秒内隐形（攻击会显形）。"},
-    "UTIL_WISH_MACHINE": {"abbr": "WIS", "name": "万能许愿机", "use": "向神明（AI）许愿。"},
+    "UTIL_WISH_MACHINE": {"abbr": "WIS", "name": "残缺的万能许愿机", "use": "向神明（AI）许愿（能力受限）。"},
+    "UTIL_DEV_FORGOTTEN_CLI": {"abbr": "CLI", "name": "开发者遗忘的命令行", "use": "更强的许愿装置，可调用更多管理权限（效果受限）。"},
     
     # T4 Legendary
     "WPN_HEAVEN_RAY": {"abbr": "RAY", "name": "精通天理", "use": "召唤轨道打击，对目标区域造成毁灭性打击。"},
@@ -144,7 +145,7 @@ CATEGORY_ORDER = [
     ("攻击类", ["WPN_SHOCK_T1", "WPN_STONE", "WPN_KNIFE_T2", "WPN_STUN_GRENADE", "WPN_TRACK_DART", "WPN_EMP_MINE", "WPN_AP_AMMO", "WPN_BOUNCE_AMMO", "WPN_RAILGUN", "WPN_HEAVEN_RAY"]),
     ("生存类", ["SURV_BANDAGE", "SURV_ENERGY_BAR", "SURV_ADRENALINE", "SURV_SILENT_PAD", "SURV_JAMMER", "SURV_ARMOR_LIGHT", "SURV_REPAIR", "SURV_PHASE_SHIFT", "SURV_PURGE", "SURV_NINGBYE_MODE"]),
     ("侦察类", ["RECON_AMP_T1", "RECON_FLASHLIGHT", "RECON_HEARTBEAT", "RECON_DRONE_TAG", "RECON_GLOBAL_SCAN", "RECON_XRAY", "RECON_SCOPE", "RECON_SENSOR", "RECON_SCANNER", "RECON_JAMMER"]),
-    ("搜索类", ["SCAV_BACKPACK_M", "SCAV_DETECTOR", "SCAV_DECODER", "SCAV_MASTER_KEY", "UTIL_BLINK", "UTIL_RADAR", "UTIL_STEALTH", "UTIL_WISH_MACHINE"]),
+    ("搜索类", ["SCAV_BACKPACK_M", "SCAV_DETECTOR", "SCAV_DECODER", "SCAV_MASTER_KEY", "UTIL_BLINK", "UTIL_RADAR", "UTIL_STEALTH", "UTIL_WISH_MACHINE", "UTIL_DEV_FORGOTTEN_CLI"]),
 ]
 
 def get_item_abbr(item_id: str) -> str:

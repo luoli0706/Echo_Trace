@@ -29,21 +29,21 @@ type Blip struct {
 }
 
 type GameState struct {
-	Config       *GameConfig
-	Map          *GameMap
-	Players      map[string]*Player
-	Entities     map[string]Entity
-	AOI          *AOIManager
-	Phase        int
-	PhaseTimer   float64
-	RespawnTimer float64
-	PulseTimer   float64
-	AIPulseTimer float64 // For NingBye Radar Pulse
+	Config            *GameConfig
+	Map               *GameMap
+	Players           map[string]*Player
+	Entities          map[string]Entity
+	AOI               *AOIManager
+	Phase             int
+	PhaseTimer        float64
+	RespawnTimer      float64
+	PulseTimer        float64
+	AIPulseTimer      float64   // For NingBye Radar Pulse
 	GlobalJammerUntil time.Time // T4 Jammer
-	GlobalEvents []GlobalEvent
-	MotorsFixed  int
-	TotalKills   int
-	Mutex        sync.RWMutex
+	GlobalEvents      []GlobalEvent
+	MotorsFixed       int
+	TotalKills        int
+	Mutex             sync.RWMutex
 
 	// Phase 0 State
 	StartTime time.Time
@@ -642,6 +642,16 @@ func (gs *GameState) RecalculateStats(p *Player) {
 		}
 	}
 
+	// Permanent tactic preference bonuses (independent of config multipliers):
+	// - RECON: +20% view radius
+	// - DEFENSE: +20% base HP
+	if p.Tactic == "RECON" {
+		viewMult *= 1.2
+	}
+	if p.Tactic == "DEFENSE" {
+		maxHPMult *= 1.2
+	}
+
 	// Base stats (recomputed each time)
 	invBonus := 0
 	if now.Before(p.BuffInvCapUntil) {
@@ -669,15 +679,19 @@ func (gs *GameState) RecalculateStats(p *Player) {
 	p.MaxHP = baseHP * maxHPMult
 	p.ViewRadius = (gs.Config.Gameplay.BaseViewRadius * viewMult) + viewBonus
 	p.HearRadius = (baseHear * hearMult) + hearBonus
-	
+
 	// T4 NingBye Mode Override
 	if now.Before(p.BuffNingByeUntil) {
 		// Use Boss Config
 		p.MaxHP = 300
-		if gs.Config != nil { p.MaxHP = gs.Config.AI.NingBye.HP }
+		if gs.Config != nil {
+			p.MaxHP = gs.Config.AI.NingBye.HP
+		}
 		p.MaxArmor = 150
-		if gs.Config != nil { p.MaxArmor = gs.Config.AI.NingBye.Armor }
-		// Heal up to new max if not there? 
+		if gs.Config != nil {
+			p.MaxArmor = gs.Config.AI.NingBye.Armor
+		}
+		// Heal up to new max if not there?
 		// Item use logic usually handles the heal.
 	}
 
@@ -760,7 +774,7 @@ func (gs *GameState) HandleFire(sessionID string) {
 		p.ClientMsg = "System Locked (Phase Shift)"
 		return
 	}
-	
+
 	// Check Invisible -> Shoot breaks invisibility
 	if time.Now().Before(p.BuffInvisibleUntil) {
 		p.BuffInvisibleUntil = time.Time{} // Clear buff
@@ -787,7 +801,7 @@ func (gs *GameState) HandleFire(sessionID string) {
 			damage = gs.Config.Combat.BulletDamage
 		}
 	}
-	
+
 	// Ammo Logic
 	ammoType := p.AmmoType
 	if p.AmmoCount > 0 {
@@ -801,7 +815,11 @@ func (gs *GameState) HandleFire(sessionID string) {
 
 	// RAILGUN: Hitscan, Wall Penetration
 	if ammoType == "RAILGUN" {
-		gs.fireRailgun(p, 75.0) // 75 Damage
+		pen := 0.0
+		if p.Tactic == "TRAP" {
+			pen = 0.2
+		}
+		gs.fireRailgun(p, 75.0, pen) // 75 Damage
 		return
 	}
 
@@ -817,7 +835,7 @@ func (gs *GameState) HandleFire(sessionID string) {
 		X: p.Pos.X + dir.X*0.6,
 		Y: p.Pos.Y + dir.Y*0.6,
 	}
-	
+
 	// Modifiers based on AmmoType
 	lifetimeSec := 5.0
 	defaultBounces := 0
@@ -828,17 +846,22 @@ func (gs *GameState) HandleFire(sessionID string) {
 		defaultBounces = gs.Config.Combat.DefaultBounces
 	}
 
-	projData := ProjectileData{
-		OwnerID:     sessionID,
-		Velocity:    Vector2{X: dir.X * speed, Y: dir.Y * speed},
-		Damage:      damage,
-		Radius:      radius,
-		Lifetime:    time.Now().Add(time.Duration(lifetimeSec * float64(time.Second))),
-		BouncesLeft: defaultBounces,
+	pen := 0.0
+	if p.Tactic == "TRAP" {
+		pen = 0.2
 	}
-	
+	projData := ProjectileData{
+		OwnerID:          sessionID,
+		Velocity:         Vector2{X: dir.X * speed, Y: dir.Y * speed},
+		Damage:           damage,
+		Radius:           radius,
+		Lifetime:         time.Now().Add(time.Duration(lifetimeSec * float64(time.Second))),
+		BouncesLeft:      defaultBounces,
+		ArmorPenetration: pen,
+	}
+
 	if ammoType == "AP" {
-		projData.Damage = 40 
+		projData.Damage = 40
 	} else if ammoType == "BOUNCE" {
 		projData.Damage = 25
 		projData.BouncesLeft += 100 // Bounce ammo adds lots of bounces
@@ -848,30 +871,34 @@ func (gs *GameState) HandleFire(sessionID string) {
 		UID:   uid,
 		Type:  EntityTypeProjectile,
 		Pos:   spawnPos,
-		State: 1, 
+		State: 1,
 		Extra: projData,
 	}
 }
 
-func (gs *GameState) fireRailgun(p *Player, damage float64) {
+func (gs *GameState) fireRailgun(p *Player, damage float64, armorPenetration float64) {
 	// Instant hitscan, infinite range, ignores walls (penetration decay?)
 	// For Alpha: infinite range, hits first target, ignores walls.
 	// Visual: Add a "LASER" event?
-	
+
 	bestTarget := (*Player)(nil)
 	bestDist := 999.0
-	
+
 	for _, t := range gs.Players {
-		if t.SessionID == p.SessionID || !t.IsAlive { continue }
-		
+		if t.SessionID == p.SessionID || !t.IsAlive {
+			continue
+		}
+
 		// Line vs Circle check
 		// P + t*Dir = C
 		// (C - P) dot Dir_perp ... simple distance check to ray
 		toTarget := Vector2{X: t.Pos.X - p.Pos.X, Y: t.Pos.Y - p.Pos.Y}
 		distAlong := toTarget.X*p.LookDir.X + toTarget.Y*p.LookDir.Y
-		if distAlong < 0 { continue } // Behind
-		
-		perpDist2 := (toTarget.X*toTarget.X + toTarget.Y*toTarget.Y) - (distAlong*distAlong)
+		if distAlong < 0 {
+			continue
+		} // Behind
+
+		perpDist2 := (toTarget.X*toTarget.X + toTarget.Y*toTarget.Y) - (distAlong * distAlong)
 		if perpDist2 < 0.5*0.5 { // Hit radius
 			if distAlong < bestDist {
 				bestDist = distAlong
@@ -879,9 +906,9 @@ func (gs *GameState) fireRailgun(p *Player, damage float64) {
 			}
 		}
 	}
-	
+
 	if bestTarget != nil {
-		gs.applyDamageLocked(p, bestTarget, damage, 0.0)
+		gs.applyDamageLocked(p, bestTarget, damage, armorPenetration)
 		gs.addEvent("RAILGUN", fmt.Sprintf("Railgun fired by %s!", p.Name))
 	} else {
 		gs.addEvent("RAILGUN", fmt.Sprintf("Railgun fired by %s (Miss)", p.Name))
@@ -940,7 +967,7 @@ func (gs *GameState) applyDamageLocked(attacker, victim *Player, damage float64,
 	if victim.HP <= 0 {
 		victim.HP = 0
 		victim.IsAlive = false // Explicitly set to false
-		if !victim.IsDead { // Prevent multiple death calls
+		if !victim.IsDead {    // Prevent multiple death calls
 			if attacker != nil {
 				attacker.Kills++
 			}
@@ -961,11 +988,15 @@ func (gs *GameState) applyDamageLocked(attacker, victim *Player, damage float64,
 
 func (gs *GameState) applyDamageToAI(aiUID string, damage float64, attackerID string) {
 	ent, ok := gs.Entities[aiUID]
-	if !ok { return }
-	
+	if !ok {
+		return
+	}
+
 	data, ok := ent.Extra.(NingByeAI)
-	if !ok { return }
-	
+	if !ok {
+		return
+	}
+
 	// Armor Logic (Simple: Armor takes damage first)
 	if data.Armor > 0 {
 		if data.Armor >= damage {
@@ -977,7 +1008,7 @@ func (gs *GameState) applyDamageToAI(aiUID string, damage float64, attackerID st
 		}
 	}
 	data.HP -= damage
-	
+
 	// Aggro Logic: Mark attacker as threat
 	if attackerID != "" {
 		if p, ok := gs.Players[attackerID]; ok {
@@ -992,8 +1023,8 @@ func (gs *GameState) applyDamageToAI(aiUID string, damage float64, attackerID st
 		// AI Death Logic
 		gs.addEvent("BOSS_DEFEATED", "The NingBye Tunk has been destroyed!")
 		// Drop loot: Always T3
-		gs.SpawnSupplyDrop(ent.Pos, 3) 
-		
+		gs.SpawnSupplyDrop(ent.Pos, 3)
+
 		// 20% Chance for T4
 		if rand.Float64() < 0.20 {
 			// Pick random T4
@@ -1011,7 +1042,7 @@ func (gs *GameState) applyDamageToAI(aiUID string, damage float64, attackerID st
 				pos := ent.Pos
 				pos.X += (rand.Float64() - 0.5)
 				pos.Y += (rand.Float64() - 0.5)
-				
+
 				gs.Entities[item.UID] = Entity{
 					UID:   item.UID,
 					Type:  EntityTypeItemDrop,
@@ -1022,7 +1053,7 @@ func (gs *GameState) applyDamageToAI(aiUID string, damage float64, attackerID st
 				log.Printf("Boss dropped Legendary Item: %s", item.Name)
 			}
 		}
-		
+
 		delete(gs.Entities, aiUID)
 	} else {
 		// Update Entity
@@ -1195,14 +1226,16 @@ func (gs *GameState) UpdateTick(dt float64) {
 		now := time.Now()
 		deadline := time.Duration(graceSec) * time.Second
 		for sid, p := range gs.Players {
-			if p == nil { continue }
+			if p == nil {
+				continue
+			}
 			if p.Disconnected && !p.DisconnectedAt.IsZero() && now.Sub(p.DisconnectedAt) > deadline {
 				gs.addEvent("PLAYER_KICK", fmt.Sprintf("%s disconnected too long and was removed.", p.Name))
 				gs.removePlayerLocked(sid)
 			}
 		}
 	}
-	
+
 	// Respawn Logic
 	now := time.Now()
 	for _, p := range gs.Players {
@@ -1248,7 +1281,7 @@ func (gs *GameState) UpdateTick(dt float64) {
 			gs.addEvent("MOTOR_PULSE", "Motors are emitting a signal!")
 		}
 	}
-	
+
 	// AI Pulse Logic (Always active if AI exists)
 	gs.AIPulseTimer -= dt
 	if gs.AIPulseTimer <= 0 {
@@ -1399,7 +1432,7 @@ func (gs *GameState) UpdateTick(dt float64) {
 
 	// 5. Update Projectiles
 	gs.updateProjectiles(dt)
-	
+
 	// 6. Update AI
 	if gs.Phase >= PhaseSearch && gs.Phase <= PhaseEscape {
 		gs.UpdateNingByeAI(dt)
@@ -1420,7 +1453,7 @@ func (gs *GameState) updateProjectiles(dt float64) {
 			toRemove = append(toRemove, uid)
 			continue
 		}
-		
+
 		// Check Lifetime
 		if now.After(data.Lifetime) {
 			toRemove = append(toRemove, uid)
@@ -1440,7 +1473,7 @@ func (gs *GameState) updateProjectiles(dt float64) {
 				// Try move X
 				hitX := gs.checkCollision(Vector2{X: nextPos.X, Y: e.Pos.Y}, data.Radius)
 				hitY := gs.checkCollision(Vector2{X: e.Pos.X, Y: nextPos.Y}, data.Radius)
-				
+
 				if hitX {
 					data.Velocity.X = -data.Velocity.X
 				}
@@ -1451,10 +1484,10 @@ func (gs *GameState) updateProjectiles(dt float64) {
 					data.Velocity.X = -data.Velocity.X
 					data.Velocity.Y = -data.Velocity.Y
 				}
-				
+
 				data.BouncesLeft--
 				e.Extra = data
-				
+
 				// Move out of wall in same frame to avoid "stutter"
 				nextPos = Vector2{
 					X: e.Pos.X + data.Velocity.X*dt,
@@ -1492,12 +1525,14 @@ func (gs *GameState) updateProjectiles(dt float64) {
 				break
 			}
 		}
-		
+
 		// 3. Check AI Collision (Players hitting AI)
 		if !hitPlayer {
 			for tUID, tEnt := range gs.Entities {
-				if tEnt.Type != EntityTypeNingBye { continue }
-				
+				if tEnt.Type != EntityTypeNingBye {
+					continue
+				}
+
 				// Collision
 				dist := Distance(nextPos, tEnt.Pos)
 				// Boss Radius approx 0.6 (1.5x player)
@@ -1631,7 +1666,7 @@ func (gs *GameState) nextPhase() {
 			mcount = gs.Config.Phases.Phase2.MotorsSpawnCount
 		}
 		gs.spawnMotors(mcount)
-		
+
 		gs.spawnPhaseSupplyDrops(2)
 		gs.spawnOrMoveMerchantForPhase(2)
 		gs.refreshAllPlayersShopStockForPhase(2)
@@ -1668,7 +1703,7 @@ func (gs *GameState) spawnNingByeAI() {
 		reload = gs.Config.AI.NingBye.ReloadTimeSec
 		sense = gs.Config.AI.NingBye.SensingRadiusRatio
 	}
-	
+
 	// Calc Sensing Radius based on Player Base View
 	baseView := 10.0
 	if gs.Config != nil && gs.Config.Gameplay.BaseViewRadius > 0 {
@@ -1678,7 +1713,7 @@ func (gs *GameState) spawnNingByeAI() {
 
 	pos := gs.Map.GetRandomSpawnPos()
 	uid := NewUID()
-	
+
 	aiData := NingByeAI{
 		State:            AIStatePatrol,
 		HP:               hp,
@@ -1691,7 +1726,7 @@ func (gs *GameState) spawnNingByeAI() {
 		ReloadTimeSec:    reload,
 		SensingRadius:    finalSense,
 	}
-	
+
 	gs.Entities[uid] = Entity{
 		UID:   uid,
 		Type:  EntityTypeNingBye,
@@ -1834,7 +1869,7 @@ func (gs *GameState) GetSnapshot(sessionID string) map[string]interface{} {
 
 	// Radar Logic: Calculate Blips
 	radarBlips := make([]Blip, 0)
-	
+
 	// T4 Jammer Check
 	isJammerActive := time.Now().Before(gs.GlobalJammerUntil)
 	if isJammerActive {
@@ -1864,7 +1899,7 @@ func (gs *GameState) GetSnapshot(sessionID string) map[string]interface{} {
 				}
 			}
 		}
-		
+
 		// AI Radar Pulse
 		if gs.AIPulseTimer > 27.0 {
 			for _, e := range gs.Entities {
@@ -1897,7 +1932,7 @@ func (gs *GameState) GetSnapshot(sessionID string) map[string]interface{} {
 			continue
 		}
 		// Silent buff removed in refactor. Footsteps always emitted unless logic changes.
-		
+
 		isMoving := other.TargetDir.X != 0 || other.TargetDir.Y != 0
 		if isMoving {
 			dist := Distance(p.Pos, other.Pos)
@@ -1919,7 +1954,7 @@ func (gs *GameState) GetSnapshot(sessionID string) map[string]interface{} {
 					dir.X /= len
 					dir.Y /= len
 				}
-				
+
 				intensity := 1.0 - (dist / hearRadius)
 				if intensity < 0 {
 					intensity = 0
@@ -1935,13 +1970,13 @@ func (gs *GameState) GetSnapshot(sessionID string) map[string]interface{} {
 	}
 
 	return map[string]interface{}{
-		"timestamp":   0,
-		"phase":       gs.Phase,
-		"time_left":   gs.PhaseTimer,
-		"total_kills": gs.TotalKills,
+		"timestamp":     0,
+		"phase":         gs.Phase,
+		"time_left":     gs.PhaseTimer,
+		"total_kills":   gs.TotalKills,
 		"jammer_active": isJammerActive,
-		"events":      gs.GlobalEvents,
-		"self":        p,
+		"events":        gs.GlobalEvents,
+		"self":          p,
 		"vision": map[string]interface{}{
 			"players":  visiblePlayers,
 			"entities": visibleEntities,

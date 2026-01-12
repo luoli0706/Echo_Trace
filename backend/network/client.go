@@ -44,7 +44,7 @@ func ServeWs(w http.ResponseWriter, r *http.Request) {
 func (c *Client) readPump() {
 	defer func() {
 		if c.CurrentRoom != nil {
-			c.CurrentRoom.Unregister <- c
+			c.CurrentRoom.RemoveClient(c)
 		}
 		c.Conn.Close()
 	}()
@@ -74,6 +74,10 @@ func (c *Client) readPump() {
 		if typeCode == 1011 { // JOIN_ROOM
 			payload, _ := req["payload"].(map[string]interface{})
 			c.handleJoinRoom(payload)
+			continue
+		}
+		if typeCode == 1015 { // LEAVE_ROOM
+			c.handleLeaveRoom()
 			continue
 		}
 		if typeCode == 1013 { // LIST_ROOMS
@@ -174,6 +178,22 @@ func (c *Client) readPump() {
 			c.CurrentRoom.GameLoop.InputChan <- input
 		}
 	}
+}
+
+func (c *Client) handleLeaveRoom() {
+	if c.CurrentRoom == nil {
+		c.SendJSON(map[string]interface{}{
+			"type":    1016, // ROOM_LEFT
+			"payload": map[string]interface{}{"success": true},
+		})
+		return
+	}
+	room := c.CurrentRoom
+	room.RemoveClient(c)
+	c.SendJSON(map[string]interface{}{
+		"type":    1016, // ROOM_LEFT
+		"payload": map[string]interface{}{"success": true},
+	})
 }
 
 func (c *Client) handleCreateRoom(payload map[string]interface{}) {

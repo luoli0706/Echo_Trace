@@ -2,10 +2,12 @@ package main
 
 import (
 	"bytes"
+	"echo_trace_server/network"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
-	"echo_trace_server/network"
+	"time"
 )
 
 type AdminRequest struct {
@@ -48,18 +50,56 @@ type CommandAIRequest struct {
 	TargetY float64 `json:"target_y"`
 }
 
+type MovePlayerRequest struct {
+	SessionID string  `json:"session_id"`
+	X         float64 `json:"x"`
+	Y         float64 `json:"y"`
+}
+
 type WishRequest struct {
 	AdminRequest
 	Wish string `json:"wish"`
 }
 
+type mcpWishResponse struct {
+	Status           string        `json:"status"`
+	Results          []interface{} `json:"results"`
+	PlayerVisibleMsg string        `json:"玩家可见回应"`
+}
+
+func setPlayerClientMsg(sessionID string, msg string) {
+	if sessionID == "" {
+		return
+	}
+	roomIDs := network.GlobalManager.ListRooms()
+	for _, rid := range roomIDs {
+		room := network.GlobalManager.GetRoom(rid)
+		if room != nil && room.GameLoop != nil && room.GameLoop.GameState != nil {
+			gs := room.GameLoop.GameState
+			gs.Mutex.Lock()
+			if p, ok := gs.Players[sessionID]; ok {
+				p.ClientMsg = msg
+				gs.Mutex.Unlock()
+				return
+			}
+			gs.Mutex.Unlock()
+		}
+	}
+}
+
 // ... (Legacy code, kept for reference but reusing logic)
 
 func handleAdminModifyHealth(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" { http.Error(w, "Method not allowed", http.StatusMethodNotAllowed); return }
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	var req ModifyHealthRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil { http.Error(w, err.Error(), http.StatusBadRequest); return }
-	
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	found := false
 	roomIDs := network.GlobalManager.ListRooms()
 	for _, rid := range roomIDs {
@@ -72,13 +112,23 @@ func handleAdminModifyHealth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if found { w.Write([]byte("OK")) } else { http.Error(w, "Player not found", http.StatusNotFound) }
+	if found {
+		w.Write([]byte("OK"))
+	} else {
+		http.Error(w, "Player not found", http.StatusNotFound)
+	}
 }
 
 func handleAdminModifyArmor(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" { http.Error(w, "Method not allowed", http.StatusMethodNotAllowed); return }
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	var req ModifyArmorRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil { http.Error(w, err.Error(), http.StatusBadRequest); return }
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	found := false
 	roomIDs := network.GlobalManager.ListRooms()
@@ -92,13 +142,23 @@ func handleAdminModifyArmor(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if found { w.Write([]byte("OK")) } else { http.Error(w, "Player not found", http.StatusNotFound) }
+	if found {
+		w.Write([]byte("OK"))
+	} else {
+		http.Error(w, "Player not found", http.StatusNotFound)
+	}
 }
 
 func handleAdminModifyCapacity(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" { http.Error(w, "Method not allowed", http.StatusMethodNotAllowed); return }
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	var req ModifyCapacityRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil { http.Error(w, err.Error(), http.StatusBadRequest); return }
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	found := false
 	roomIDs := network.GlobalManager.ListRooms()
@@ -112,13 +172,23 @@ func handleAdminModifyCapacity(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if found { w.Write([]byte("OK")) } else { http.Error(w, "Player not found", http.StatusNotFound) }
+	if found {
+		w.Write([]byte("OK"))
+	} else {
+		http.Error(w, "Player not found", http.StatusNotFound)
+	}
 }
 
 func handleAdminAddItem(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" { http.Error(w, "Method not allowed", http.StatusMethodNotAllowed); return }
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	var req AddItemRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil { http.Error(w, err.Error(), http.StatusBadRequest); return }
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	found := false
 	roomIDs := network.GlobalManager.ListRooms()
@@ -132,13 +202,23 @@ func handleAdminAddItem(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if found { w.Write([]byte("OK")) } else { http.Error(w, "Player not found", http.StatusNotFound) }
+	if found {
+		w.Write([]byte("OK"))
+	} else {
+		http.Error(w, "Player not found", http.StatusNotFound)
+	}
 }
 
 func handleAdminModifySpeed(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" { http.Error(w, "Method not allowed", http.StatusMethodNotAllowed); return }
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	var req ModifySpeedRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil { http.Error(w, err.Error(), http.StatusBadRequest); return }
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	found := false
 	roomIDs := network.GlobalManager.ListRooms()
@@ -152,13 +232,23 @@ func handleAdminModifySpeed(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if found { w.Write([]byte("OK")) } else { http.Error(w, "Player not found", http.StatusNotFound) }
+	if found {
+		w.Write([]byte("OK"))
+	} else {
+		http.Error(w, "Player not found", http.StatusNotFound)
+	}
 }
 
 func handleAdminSetThreat(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" { http.Error(w, "Method not allowed", http.StatusMethodNotAllowed); return }
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	var req SetThreatRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil { http.Error(w, err.Error(), http.StatusBadRequest); return }
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	found := false
 	roomIDs := network.GlobalManager.ListRooms()
@@ -172,20 +262,30 @@ func handleAdminSetThreat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if found { w.Write([]byte("OK")) } else { http.Error(w, "Player not found", http.StatusNotFound) }
+	if found {
+		w.Write([]byte("OK"))
+	} else {
+		http.Error(w, "Player not found", http.StatusNotFound)
+	}
 }
 
 func handleAdminCommandAI(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" { http.Error(w, "Method not allowed", http.StatusMethodNotAllowed); return }
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	var req CommandAIRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil { http.Error(w, err.Error(), http.StatusBadRequest); return }
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	found := false
 	roomIDs := network.GlobalManager.ListRooms()
 	for _, rid := range roomIDs {
 		room := network.GlobalManager.GetRoom(rid)
 		if room != nil && room.GameLoop != nil && room.GameLoop.GameState != nil {
-			// Iterate all rooms, if any has AI, command it. 
+			// Iterate all rooms, if any has AI, command it.
 			// In multi-room setup, this is ambiguous (which room?), but for this demo assuming single active room or command all.
 			if room.GameLoop.GameState.CommandAI(req.TargetX, req.TargetY) {
 				found = true
@@ -195,17 +295,58 @@ func handleAdminCommandAI(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if found { w.Write([]byte("OK")) } else { http.Error(w, "AI not found in any room", http.StatusNotFound) }
+	if found {
+		w.Write([]byte("OK"))
+	} else {
+		http.Error(w, "AI not found in any room", http.StatusNotFound)
+	}
+}
+
+func handleAdminMovePlayer(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req MovePlayerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	found := false
+	roomIDs := network.GlobalManager.ListRooms()
+	for _, rid := range roomIDs {
+		room := network.GlobalManager.GetRoom(rid)
+		if room != nil && room.GameLoop != nil && room.GameLoop.GameState != nil {
+			if room.GameLoop.GameState.AdminMovePlayer(req.SessionID, req.X, req.Y) {
+				found = true
+				break
+			}
+		}
+	}
+
+	if found {
+		w.Write([]byte("OK"))
+	} else {
+		http.Error(w, "Player not found", http.StatusNotFound)
+	}
 }
 
 func handleWish(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" { http.Error(w, "Method not allowed", http.StatusMethodNotAllowed); return }
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	var req WishRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil { http.Error(w, err.Error(), http.StatusBadRequest); return }
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	found := false
 	consumed := false
-	
+	consumedItemID := ""
+
 	roomIDs := network.GlobalManager.ListRooms()
 	for _, rid := range roomIDs {
 		room := network.GlobalManager.GetRoom(rid)
@@ -217,12 +358,18 @@ func handleWish(w http.ResponseWriter, r *http.Request) {
 				// Check for Item
 				slotIdx := -1
 				for i, item := range p.Inventory {
+					if item.ID == "UTIL_DEV_FORGOTTEN_CLI" {
+						slotIdx = i
+						consumedItemID = "UTIL_DEV_FORGOTTEN_CLI"
+						break
+					}
 					if item.ID == "UTIL_WISH_MACHINE" {
 						slotIdx = i
+						consumedItemID = "UTIL_WISH_MACHINE"
 						break
 					}
 				}
-				
+
 				if slotIdx >= 0 {
 					// Consume Item
 					p.Inventory = append(p.Inventory[:slotIdx], p.Inventory[slotIdx+1:]...)
@@ -231,41 +378,63 @@ func handleWish(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			gs.Mutex.Unlock()
-			
+
 			// Call AdminWish outside the lock to avoid deadlock
 			if consumed {
 				gs.AdminWish(req.SessionID, req.Wish)
 			}
-			
-			if found { break }
+
+			if found {
+				break
+			}
 		}
 	}
-	
+
 	if !found {
 		http.Error(w, "Player not found", http.StatusNotFound)
 		return
 	}
-	
+
 	if !consumed {
-		http.Error(w, "You do not have a Wish Machine!", http.StatusForbidden)
+		http.Error(w, "You do not have a Wish Device!", http.StatusForbidden)
 		return
 	}
-	
+
 	// Async call to MCP
-	go func(sid, wText string) {
+	go func(sid, wText string, itemID string) {
+		setPlayerClientMsg(sid, "Wish received. Processing...")
 		mcpURL := "http://localhost:9091/wish"
 		bodyData := map[string]string{
 			"session_id": sid,
 			"wish":       wText,
+			"item_id":    itemID,
 		}
 		jsonData, _ := json.Marshal(bodyData)
-		resp, err := http.Post(mcpURL, "application/json", bytes.NewBuffer(jsonData))
+		client := &http.Client{Timeout: 12 * time.Second}
+		resp, err := client.Post(mcpURL, "application/json", bytes.NewBuffer(jsonData))
 		if err != nil {
 			log.Printf("Failed to call MCP: %v", err)
+			setPlayerClientMsg(sid, "Wish failed: MCP unreachable.")
 			return
 		}
 		defer resp.Body.Close()
-	}(req.SessionID, req.Wish)
-	
+		b, _ := io.ReadAll(resp.Body)
+		log.Printf("[WISH] MCP response: %s", string(b))
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			setPlayerClientMsg(sid, "Wish failed: MCP error.")
+			return
+		}
+		var parsed mcpWishResponse
+		if err := json.Unmarshal(b, &parsed); err != nil {
+			setPlayerClientMsg(sid, "Wish failed: invalid MCP response.")
+			return
+		}
+		msg := parsed.PlayerVisibleMsg
+		if msg == "" {
+			msg = "Wish processed."
+		}
+		setPlayerClientMsg(sid, msg)
+	}(req.SessionID, req.Wish, consumedItemID)
+
 	w.Write([]byte("Wish granted (Item Consumed)."))
 }

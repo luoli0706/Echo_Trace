@@ -48,7 +48,7 @@
   "SHOP_TITLE": "BLACK MARKET",
   "SHOP_FUNDS": "Your Funds:",
   "SHOP_HINT": "1-6 Buy | Ctrl+1-6 Sell | R Refresh | F/ESC Close",
-  "LOBBY_HINT": "SELECT TACTIC: 1.RECON 2.DEFENSE 3.TRAP",
+  "LOBBY_HINT": "SELECT TACTIC: 1.RECON(+20% vision) 2.SURVIVAL(+20% HP) 3.ATTACK(+20% armor pen)",
   "ITEM_STUN": "Stun Gun",
   "ITEM_MED": "MedKit",
   "ITEM_SCAN": "Scanner",

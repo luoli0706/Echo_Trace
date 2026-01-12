@@ -308,8 +308,16 @@ def main():
                         if not net or not getattr(net, "connected", False):
                             renderer.menu_message = "未连接服务器：请先在 CONNECT 页面连接成功。"
                         else:
-                            net.send({"type": 1013, "payload": {}})
-                            renderer.state = "ROOM_LIST"
+                            # Prefer re-joining the last room for continuity.
+                            if persisted_last_room_id:
+                                payload = {"room_id": persisted_last_room_id}
+                                if persisted_name:
+                                    payload["name"] = persisted_name
+                                net.send({"type": 1011, "payload": payload})
+                                renderer.menu_message = f"正在返回上次行动: {persisted_last_room_id}".strip()
+                            else:
+                                net.send({"type": 1013, "payload": {}})
+                                renderer.state = "ROOM_LIST"
                 continue
 
             # --- State: ROOM_LIST ---
@@ -371,6 +379,39 @@ def main():
             # --- State: CONFIG ---
             if renderer.state == "CONFIG":
                 if event.type == pygame.MOUSEBUTTONDOWN:
+                    if getattr(renderer, "config_export_rect", None) and renderer.config_export_rect.collidepoint(event.pos):
+                        try:
+                            export_obj = {"room_name": renderer.room_name_input.strip(), "config": renderer.config_data or {}}
+                            _clip_set_text(json.dumps(export_obj, ensure_ascii=False))
+                            renderer.menu_message = "已导出到剪贴板（JSON）。"
+                        except Exception:
+                            renderer.menu_message = "导出失败：无法写入剪贴板。"
+                        continue
+
+                    if getattr(renderer, "config_import_rect", None) and renderer.config_import_rect.collidepoint(event.pos):
+                        try:
+                            raw = _clip_get_text().strip()
+                            obj = json.loads(raw) if raw else {}
+                            if isinstance(obj, dict) and "config" in obj and isinstance(obj.get("config"), dict):
+                                renderer.config_data = obj.get("config") or {}
+                                rn = str(obj.get("room_name") or "").strip()
+                                if rn:
+                                    renderer.room_name_input = rn
+                                renderer._set_config_index_rows()
+                                renderer.config_focus = "table"
+                                renderer.menu_message = "已从剪贴板导入设置。"
+                            elif isinstance(obj, dict):
+                                # Also allow importing the config dict directly.
+                                renderer.config_data = obj
+                                renderer._set_config_index_rows()
+                                renderer.config_focus = "table"
+                                renderer.menu_message = "已从剪贴板导入设置（config对象）。"
+                            else:
+                                renderer.menu_message = "导入失败：剪贴板不是有效JSON对象。"
+                        except Exception:
+                            renderer.menu_message = "导入失败：请先复制有效JSON到剪贴板。"
+                        continue
+
                     if renderer.config_create_rect and renderer.config_create_rect.collidepoint(event.pos):
                         rn = renderer.room_name_input.strip()
                         if not rn:
@@ -390,6 +431,12 @@ def main():
                             renderer._set_config_index_rows()
                             renderer.config_focus = "table"
                         else:
+                            # Detach from current room (if any) so the user can create/join again.
+                            if net and getattr(net, "connected", False):
+                                try:
+                                    net.send({"type": 1015, "payload": {}})
+                                except Exception:
+                                    pass
                             renderer.state = "MENU"
                         continue
 
@@ -583,19 +630,30 @@ def main():
                         if state.phase == 0 and hasattr(renderer, 'lobby_back_rect') and renderer.lobby_back_rect.collidepoint(event.pos):
                             renderer.state = "MENU"
                             state = GameState() # Reset
-                            if net:
-                                net.clear_auto_join()
-                            persisted_last_room_id = ""
-                            persisted.pop("last_room_id", None)
-                            _save_client_state(persisted)
+                            if net and getattr(net, "connected", False):
+                                try:
+                                    net.send({"type": 1015, "payload": {}})
+                                except Exception:
+                                    pass
                             continue
                             
+                        prev_state = renderer.state
                         renderer.handle_click(event.pos)
+                        # If any UI action sends us back to MENU, also detach from room on server
+                        # but keep last_room_id so the player can re-join via "加入行动".
+                        if prev_state == "GAME" and renderer.state == "MENU":
+                            state = GameState()
+                            if net and getattr(net, "connected", False):
+                                try:
+                                    net.send({"type": 1015, "payload": {}})
+                                except Exception:
+                                    pass
 
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
+                        # ESC should always enter Settings menu directly.
                         renderer.state = "PAUSE"
-                        renderer.pause_open()
+                        renderer.pause_route = ["settings"]
                         continue
                     
                     # Gameplay Inputs
@@ -652,7 +710,7 @@ def main():
                                             item = state.my_inventory[slot]
                                             iid = item.get("id") or item.get("ID")
                                             print(f"[DEBUG] Slot {slot} Item: {iid}")
-                                            if iid == "UTIL_WISH_MACHINE":
+                                            if iid in ("UTIL_WISH_MACHINE", "UTIL_DEV_FORGOTTEN_CLI"):
                                                 is_wish = True
                                         else:
                                             print(f"[DEBUG] Slot {slot} is empty.")
@@ -691,7 +749,8 @@ def main():
             if renderer.state == "PAUSE":
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
-                        if renderer.pause_view() != "root":
+                        # Settings is the pause root now.
+                        if renderer.pause_view() != "settings":
                             renderer.pause_pop()
                         else:
                             renderer.state = "GAME"
@@ -718,7 +777,7 @@ def main():
                                         
                                     api_url = f"{base}/admin/player/inventory/item"
                                     # Must use item_ids list
-                                    data = json.dumps({"session_id": sid, "item_ids": ["UTIL_WISH_MACHINE"]}).encode('utf-8')
+                                    data = json.dumps({"session_id": sid, "item_ids": ["UTIL_DEV_FORGOTTEN_CLI"]}).encode('utf-8')
                                     req = urllib.request.Request(api_url, data=data, headers={'Content-Type': 'application/json'})
                                     with urllib.request.urlopen(req, timeout=3.0) as f:
                                         print(f"[Client] Grant Response: {f.read().decode('utf-8')}")
@@ -726,6 +785,26 @@ def main():
                                     print(f"[Client] Grant Failed: {e}")
                             
                             threading.Thread(target=grant_dev_item, args=(renderer.server_input, persisted_session_id), daemon=True).start()
+
+                        if action_or_result == "PAUSE_RESUME":
+                            renderer.state = "GAME"
+                            continue
+
+                        if action_or_result == "PAUSE_EXIT_ROOM":
+                            # Explicit exit room: detach player from room on server, return to menu.
+                            renderer.state = "MENU"
+                            state = GameState()  # Reset local
+                            renderer.pause_route = []
+                            if net:
+                                try:
+                                    net.send({"type": 1015, "payload": {}})
+                                except Exception:
+                                    pass
+                                net.clear_auto_join()
+                            persisted_last_room_id = ""
+                            persisted.pop("last_room_id", None)
+                            _save_client_state(persisted)
+                            continue
                             
                     else:
                         action = renderer.handle_pause_click(event.pos)
@@ -742,10 +821,11 @@ def main():
                             state = GameState()  # Reset local
                             renderer.pause_route = []
                             if net:
-                                net.clear_auto_join()
-                            persisted_last_room_id = ""
-                            persisted.pop("last_room_id", None)
-                            _save_client_state(persisted)
+                                try:
+                                    net.send({"type": 1015, "payload": {}})
+                                except Exception:
+                                    pass
+                            # Keep last_room_id so the user can re-join via "加入行动".
 
                 elif event.type == pygame.MOUSEWHEEL:
                     if renderer.pause_view() == "item_manual":
@@ -828,6 +908,17 @@ def main():
                     renderer.room_list_scroll = 0
                 elif mt == 4001:
                     renderer.menu_message = (pl.get("msg") if isinstance(pl, dict) else str(pl))
+                    # If re-join failed because the room is gone, drop last_room_id.
+                    try:
+                        msg = renderer.menu_message or ""
+                        if persisted_last_room_id and ("房间不存在" in msg or "已关闭" in msg):
+                            persisted_last_room_id = ""
+                            persisted.pop("last_room_id", None)
+                            _save_client_state(persisted)
+                            if net:
+                                net.clear_auto_join()
+                    except Exception:
+                        pass
 
         # Logic
         if renderer.state == "GAME" and net:

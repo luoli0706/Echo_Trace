@@ -48,7 +48,7 @@
   "SHOP_TITLE": "黑市终端",
   "SHOP_FUNDS": "当前资金:",
   "SHOP_HINT": "1-6 购买 | Ctrl+1-6 出售 | R 刷新 | F/ESC 关闭",
-  "LOBBY_HINT": "选择战术: 1.侦察 2.防御 3.陷阱",
+  "LOBBY_HINT": "选择战术倾向: 1.侦察(视野+20%) 2.生存(HP+20%) 3.攻击(穿甲+20%)",
   "ITEM_STUN": "电击枪 (T1)",
   "ITEM_MED": "急救包 (T1)",
   "ITEM_SCAN": "扫描仪 (T1)",

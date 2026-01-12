@@ -26,22 +26,25 @@ var ItemDB = map[string]Item{
 	"WPN_HEAVEN_RAY":  {ID: "WPN_HEAVEN_RAY", Type: ItemTypeOffense, Name: "Heaven Ray", MaxUses: 1, Weight: 6.0, Tier: 4, Value: 2000},
 
 	// Survival
-	"SURV_REPAIR":      {ID: "SURV_REPAIR", Type: ItemTypeSurvival, Name: "Repair Kit", MaxUses: 1, Weight: 1.0, Tier: 1, Value: 100},
-	"SURV_PHASE_SHIFT": {ID: "SURV_PHASE_SHIFT", Type: ItemTypeSurvival, Name: "Phase Shift", MaxUses: 1, Weight: 2.0, Tier: 2, Value: 350},
-	"SURV_PURGE":       {ID: "SURV_PURGE", Type: ItemTypeSurvival, Name: "Purge System", MaxUses: 1, Weight: 2.5, Tier: 3, Value: 500},
+	"SURV_REPAIR":       {ID: "SURV_REPAIR", Type: ItemTypeSurvival, Name: "Repair Kit", MaxUses: 1, Weight: 1.0, Tier: 1, Value: 100},
+	"SURV_PHASE_SHIFT":  {ID: "SURV_PHASE_SHIFT", Type: ItemTypeSurvival, Name: "Phase Shift", MaxUses: 1, Weight: 2.0, Tier: 2, Value: 350},
+	"SURV_PURGE":        {ID: "SURV_PURGE", Type: ItemTypeSurvival, Name: "Purge System", MaxUses: 1, Weight: 2.5, Tier: 3, Value: 500},
 	"SURV_NINGBYE_MODE": {ID: "SURV_NINGBYE_MODE", Type: ItemTypeSurvival, Name: "NingBye Mode", MaxUses: 1, Weight: 5.0, Tier: 4, Value: 2000},
 
 	// Recon
-	"RECON_SCOPE":  {ID: "RECON_SCOPE", Type: ItemTypeRecon, Name: "Scope", MaxUses: 1, Weight: 1.0, Tier: 1, Value: 120},
-	"RECON_SENSOR": {ID: "RECON_SENSOR", Type: ItemTypeRecon, Name: "Rear Sensor", MaxUses: 1, Weight: 1.5, Tier: 2, Value: 250},
+	"RECON_SCOPE":   {ID: "RECON_SCOPE", Type: ItemTypeRecon, Name: "Scope", MaxUses: 1, Weight: 1.0, Tier: 1, Value: 120},
+	"RECON_SENSOR":  {ID: "RECON_SENSOR", Type: ItemTypeRecon, Name: "Rear Sensor", MaxUses: 1, Weight: 1.5, Tier: 2, Value: 250},
 	"RECON_SCANNER": {ID: "RECON_SCANNER", Type: ItemTypeRecon, Name: "Global Scan", MaxUses: 1, Weight: 3.0, Tier: 3, Value: 550},
-	"RECON_JAMMER": {ID: "RECON_JAMMER", Type: ItemTypeRecon, Name: "Global Jammer", MaxUses: 1, Weight: 4.0, Tier: 4, Value: 1800},
+	"RECON_JAMMER":  {ID: "RECON_JAMMER", Type: ItemTypeRecon, Name: "Global Jammer", MaxUses: 1, Weight: 4.0, Tier: 4, Value: 1800},
 
 	// Utility (Scavenge/Util renamed in internal logic but keep type consistent)
 	"UTIL_BLINK":   {ID: "UTIL_BLINK", Type: ItemTypeScavenge, Name: "Blink", MaxUses: 1, Weight: 1.5, Tier: 1, Value: 150},
 	"UTIL_RADAR":   {ID: "UTIL_RADAR", Type: ItemTypeScavenge, Name: "Pulse Radar", MaxUses: 1, Weight: 1.5, Tier: 2, Value: 280},
 	"UTIL_STEALTH": {ID: "UTIL_STEALTH", Type: ItemTypeScavenge, Name: "Stealth Cloak", MaxUses: 1, Weight: 2.0, Tier: 3, Value: 600},
-	"UTIL_WISH_MACHINE": {ID: "UTIL_WISH_MACHINE", Type: ItemTypeScavenge, Name: "Wish Machine", MaxUses: 1, Weight: 5.0, Tier: 4, Value: 3000},
+	// T2: Broken Wish Machine (downgraded from the old T4 Wish Machine)
+	"UTIL_WISH_MACHINE": {ID: "UTIL_WISH_MACHINE", Type: ItemTypeScavenge, Name: "Broken Wish Machine", MaxUses: 1, Weight: 3.5, Tier: 2, Value: 450},
+	// T4: Developer Forgotten CLI (inherits Wish Machine abilities + extended MCP permissions)
+	"UTIL_DEV_FORGOTTEN_CLI": {ID: "UTIL_DEV_FORGOTTEN_CLI", Type: ItemTypeScavenge, Name: "Developer Forgotten CLI", MaxUses: 1, Weight: 5.0, Tier: 4, Value: 3000},
 }
 
 type weightedChoice[T any] struct {
@@ -290,7 +293,7 @@ func (gs *GameState) generateShopStock(phaseIdx int, tactic string) []string {
 
 	stock := make([]string, 0, count)
 	seen := map[string]bool{}
-	
+
 	// Phase 3: 10% Chance for T4 Item
 	if phaseIdx >= 3 && rand.Float64() < 0.10 {
 		t4Items := []string{}
@@ -375,7 +378,7 @@ func (gs *GameState) SpawnSupplyDrop(pos Vector2, phase int) {
 	}
 
 	items := []Item{}
-	
+
 	// 5% Chance for T4 Item (Legendary)
 	if rand.Float64() < 0.05 {
 		t4Items := []string{}
@@ -571,9 +574,11 @@ func (gs *GameState) HandleUseItem(playerID string, slotIndex int) {
 	case "SURV_REPAIR":
 		// Restore 30% HP, then 20 Armor
 		maxHP := p.MaxHP
-		if maxHP <= 0 { maxHP = 100 }
+		if maxHP <= 0 {
+			maxHP = 100
+		}
 		heal := maxHP * 0.30 * healMult
-		
+
 		p.HP += heal
 		if p.HP > p.MaxHP {
 			overflow := p.HP - p.MaxHP
@@ -581,7 +586,7 @@ func (gs *GameState) HandleUseItem(playerID string, slotIndex int) {
 			// Overflow converts to armor (up to max + temp?)
 			// For simplicity: just add 20 flat armor + overflow
 			p.Armor += 20 + overflow
-			if p.Armor > p.MaxArmor + 50 { // Cap temp armor
+			if p.Armor > p.MaxArmor+50 { // Cap temp armor
 				p.Armor = p.MaxArmor + 50
 			}
 		} else {
@@ -596,7 +601,7 @@ func (gs *GameState) HandleUseItem(playerID string, slotIndex int) {
 		// 3.0s Invincible, cannot shoot (Handled in HandleFire check)
 		p.BuffInvincibleUntil = time.Now().Add(3 * time.Second)
 		used = true
-	
+
 	case "SURV_PURGE":
 		// 2.0s Invincible + Clear Debuffs
 		p.BuffInvincibleUntil = time.Now().Add(2 * time.Second)
@@ -620,7 +625,7 @@ func (gs *GameState) HandleUseItem(playerID string, slotIndex int) {
 		target := gs.findNearestEnemy(p, 9999.0)
 		if target != nil {
 			gs.addEvent("SCAN", fmt.Sprintf("SCAN DETECTED: %s at [%d, %d]", target.Name, int(target.Pos.X), int(target.Pos.Y)))
-			// Also set a buff on self to show UI indicator? 
+			// Also set a buff on self to show UI indicator?
 			// Or just the global event is enough for Alpha.
 			p.BuffScanUntil = time.Now().Add(30 * time.Second)
 			used = true
@@ -674,8 +679,8 @@ func (gs *GameState) applyDamage(target *Player, dmg float64) {
 		return
 	}
 	// Damage Reduction Buff removed. Armor is the new mitigation.
-	
-	eff := dmg 
+
+	eff := dmg
 	target.HP -= eff
 	if target.HP <= 0 {
 		target.HP = 0

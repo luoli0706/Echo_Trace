@@ -2,6 +2,7 @@ package logic
 
 import (
 	"log"
+	"sync"
 	"time"
 )
 
@@ -39,7 +40,8 @@ type GameLoop struct {
 	GameState    *GameState
 	InputChan    chan PlayerInput
 	SnapshotChan chan map[string]interface{} // map[sessionID]snapshot
-	StopChan     chan bool
+	StopChan     chan struct{}
+	stopOnce     sync.Once
 }
 
 func NewGameLoop(cfg *GameConfig) *GameLoop {
@@ -47,8 +49,14 @@ func NewGameLoop(cfg *GameConfig) *GameLoop {
 		GameState:    NewGameState(cfg),
 		InputChan:    make(chan PlayerInput, 100),
 		SnapshotChan: make(chan map[string]interface{}), // Unbuffered? Or 1?
-		StopChan:     make(chan bool),
+		StopChan:     make(chan struct{}),
 	}
+}
+
+func (gl *GameLoop) Stop() {
+	gl.stopOnce.Do(func() {
+		close(gl.StopChan)
+	})
 }
 
 func (gl *GameLoop) Run() {

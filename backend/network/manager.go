@@ -96,6 +96,15 @@ func (rm *RoomManager) GetRoomByName(name string) *Room {
 	return nil
 }
 
+func (rm *RoomManager) RemoveRoom(id string) {
+	if id == "" {
+		return
+	}
+	rm.Mutex.Lock()
+	defer rm.Mutex.Unlock()
+	delete(rm.Rooms, id)
+}
+
 // ListRooms returns a list of room IDs (for simple joining)
 func (rm *RoomManager) ListRooms() []string {
 	rm.Mutex.RLock()

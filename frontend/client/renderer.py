@@ -60,6 +60,8 @@ class Renderer:
         self.config_row_rects = []
         self.config_create_rect = None
         self.config_back_rect = None
+        self.config_import_rect = None
+        self.config_export_rect = None
         self.config_view = "index"  # index | edit
         self.config_active_section = None
         self.config_sections = [
@@ -74,6 +76,10 @@ class Renderer:
         self.show_shop = self.dev_mode = self.spectator_mode = False
         # Pause UI routing stack: ["root" -> "settings"/"help"/"item_manual"].
         self.pause_route = []
+        # Settings-menu actions (pause/settings view)
+        self.settings_exit_room_rect = None
+        self.settings_help_open_rect = None
+        self.settings_item_manual_open_rect = None
         # Item manual scroll state
         self.item_manual_scroll = 0
         self.item_manual_content_height = 0
@@ -90,7 +96,8 @@ class Renderer:
         self.fov_blocked_by_walls = False
         self.hide_world_entities = False
         self.cam_offset = [0, 0]
-        self.settings_rect = pygame.Rect(WINDOW_WIDTH//2 - 150, WINDOW_HEIGHT//2 - 150, 300, 300)
+        # Slightly taller to host settings actions (resume/help/manual/exit room)
+        self.settings_rect = pygame.Rect(WINDOW_WIDTH//2 - 150, WINDOW_HEIGHT//2 - 180, 300, 360)
         self.help_rect = pygame.Rect(WINDOW_WIDTH//2 - 300, WINDOW_HEIGHT//2 - 250, 600, 500)
         self.shop_rect = pygame.Rect(WINDOW_WIDTH//2 - 200, WINDOW_HEIGHT//2 - 200, 400, 400)
         self.dev_mode_rect = pygame.Rect(WINDOW_WIDTH//2 - 120, WINDOW_HEIGHT//2 + 50, 240, 30)
@@ -125,7 +132,7 @@ class Renderer:
             return
             
         # Draw a small glowing notification at the top
-        txt = "万能许愿机正在响应你的愿望..."
+        txt = "许愿装置正在响应你的愿望..."
         # Pulsing effect
         alpha = int(155 + 100 * math.sin(time.time() * 5))
         surf = self.font.render(txt, True, (255, 0, 255))
@@ -393,6 +400,10 @@ class Renderer:
             self.pause_route.pop()
         if self.pause_view() != "item_manual":
             self.item_manual_scroll = 0
+
+    def pause_to_settings(self):
+        self.pause_route = ["settings"]
+        self.item_manual_scroll = 0
 
     def t(self, key): return i18n.t(key)
     def world_to_screen(self, wx, wy, cam_x, cam_y):
@@ -1040,7 +1051,7 @@ class Renderer:
         pygame.draw.rect(self.screen, (255, 0, 255), rect, 2, border_radius=10)
         
         # Title
-        t = self.font.render("万能许愿机", True, (255, 0, 255))
+        t = self.font.render("许愿装置", True, (255, 0, 255))
         self.screen.blit(t, t.get_rect(center=(rect.centerx, rect.y + 30)))
         
         # Hint
@@ -1179,14 +1190,27 @@ class Renderer:
             y += row_h
 
         # Buttons
+        ir = pygame.Rect(WINDOW_WIDTH//2 - 220, 485, 210, 38)
+        er = pygame.Rect(WINDOW_WIDTH//2 + 10, 485, 210, 38)
         cr = pygame.Rect(WINDOW_WIDTH//2 - 160, 535, 170, 44)
         br = pygame.Rect(WINDOW_WIDTH//2 + 10, 535, 150, 44)
+
+        pygame.draw.rect(self.screen, (60, 60, 80), ir, border_radius=6)
+        pygame.draw.rect(self.screen, (0, 255, 255), ir, 2, border_radius=6)
+        pygame.draw.rect(self.screen, (60, 60, 80), er, border_radius=6)
+        pygame.draw.rect(self.screen, (0, 255, 255), er, 2, border_radius=6)
         pygame.draw.rect(self.screen, COLOR_BTN, cr, border_radius=6)
         pygame.draw.rect(self.screen, (0, 255, 255), cr, 2, border_radius=6)
         pygame.draw.rect(self.screen, (200, 50, 50), br, border_radius=6)
         pygame.draw.rect(self.screen, (255, 255, 255), br, 2, border_radius=6)
+
+        self.screen.blit(self.hud_font.render("导入设置", True, (255,255,255)), (ir.x + 70, ir.y + 10))
+        self.screen.blit(self.hud_font.render("导出设置", True, (255,255,255)), (er.x + 70, er.y + 10))
         self.screen.blit(self.hud_font.render(self.t("BTN_CREATE_ROOM"), True, (255,255,255)), (cr.x + 20, cr.y + 12))
         self.screen.blit(self.hud_font.render(self.t("BTN_BACK"), True, (255,255,255)), (br.x + 45, br.y + 12))
+
+        self.config_import_rect = ir
+        self.config_export_rect = er
         self.config_create_rect = cr
         self.config_back_rect = br
 
@@ -1490,14 +1514,33 @@ class Renderer:
         self.screen.blit(self.hud_font.render(sens_txt, True, (255,255,255)), (self.sens_value_rect.x+10, self.sens_value_rect.y+5))
 
         # Grant Wish Machine Button (Replaces Dev Mode)
-        self.grant_wish_rect = pygame.Rect(self.settings_rect.x + 30, self.settings_rect.y + 180, 240, 30)
+        self.grant_wish_rect = pygame.Rect(self.settings_rect.x + 30, self.settings_rect.y + 190, 240, 30)
         pygame.draw.rect(self.screen, (100, 0, 100), self.grant_wish_rect, border_radius=5)
         pygame.draw.rect(self.screen, (255, 0, 255), self.grant_wish_rect, 1, border_radius=5)
-        gw_txt = self.hud_font.render("获得一个许愿机", True, (255, 200, 255))
+        gw_txt = self.hud_font.render("获得命令行(Dev)", True, (255, 200, 255))
         self.screen.blit(gw_txt, gw_txt.get_rect(center=self.grant_wish_rect.center))
 
+        # Settings navigation/actions
+        self.settings_item_manual_open_rect = pygame.Rect(self.settings_rect.x + 30, self.settings_rect.y + 230, 240, 30)
+        pygame.draw.rect(self.screen, (60, 60, 80), self.settings_item_manual_open_rect, border_radius=5)
+        pygame.draw.rect(self.screen, (0, 255, 255), self.settings_item_manual_open_rect, 1, border_radius=5)
+        im_txt = self.hud_font.render(self.t("BTN_ITEM_MANUAL"), True, (255, 255, 255))
+        self.screen.blit(im_txt, im_txt.get_rect(center=self.settings_item_manual_open_rect.center))
+
+        self.settings_help_open_rect = pygame.Rect(self.settings_rect.x + 30, self.settings_rect.y + 265, 240, 30)
+        pygame.draw.rect(self.screen, (60, 60, 80), self.settings_help_open_rect, border_radius=5)
+        pygame.draw.rect(self.screen, (0, 255, 255), self.settings_help_open_rect, 1, border_radius=5)
+        hp_txt = self.hud_font.render(self.t("BTN_HELP"), True, (255, 255, 255))
+        self.screen.blit(hp_txt, hp_txt.get_rect(center=self.settings_help_open_rect.center))
+
+        self.settings_exit_room_rect = pygame.Rect(self.settings_rect.x + 30, self.settings_rect.y + 300, 240, 30)
+        pygame.draw.rect(self.screen, (200, 50, 50), self.settings_exit_room_rect, border_radius=5)
+        pygame.draw.rect(self.screen, (255, 255, 255), self.settings_exit_room_rect, 1, border_radius=5)
+        ex_txt = self.hud_font.render("退出房间", True, (255, 255, 255))
+        self.screen.blit(ex_txt, ex_txt.get_rect(center=self.settings_exit_room_rect.center))
+
         pygame.draw.rect(self.screen, (200, 50, 50), self.back_btn_rect, border_radius=5); pygame.draw.rect(self.screen, (255, 255, 255), self.back_btn_rect, 2, border_radius=5)
-        self.screen.blit(self.hud_font.render("BACK", True, (255,255,255)), (self.back_btn_rect.x+40, self.back_btn_rect.y+10))
+        self.screen.blit(self.hud_font.render(self.t("BTN_RESUME"), True, (255,255,255)), (self.back_btn_rect.x+20, self.back_btn_rect.y+10))
 
     def draw_help_menu(self):
         pygame.draw.rect(self.screen, COLOR_MENU_BG, self.help_rect, border_radius=10); pygame.draw.rect(self.screen, (255,255,255), self.help_rect, 2, border_radius=10)
@@ -1646,17 +1689,32 @@ class Renderer:
             if view == "settings":
                 if getattr(self, "grant_wish_rect", None) and self.grant_wish_rect.collidepoint(pos):
                     return "GRANT_WISH"
+                if getattr(self, "settings_item_manual_open_rect", None) and self.settings_item_manual_open_rect.collidepoint(pos):
+                    self.pause_push("item_manual")
+                    return True
+                if getattr(self, "settings_help_open_rect", None) and self.settings_help_open_rect.collidepoint(pos):
+                    self.pause_push("help")
+                    return True
+                if getattr(self, "settings_exit_room_rect", None) and self.settings_exit_room_rect.collidepoint(pos):
+                    return "PAUSE_EXIT_ROOM"
                 if self.lang_rect.collidepoint(pos): i18n.set_lang("en" if i18n.lang == "zh" else "zh"); return True
                 if self.sens_minus_rect.collidepoint(pos):
                     self.mouse_sensitivity = max(0.1, round(self.mouse_sensitivity - 0.1, 1)); return True
                 if self.sens_plus_rect.collidepoint(pos):
                     self.mouse_sensitivity = min(5.0, round(self.mouse_sensitivity + 0.1, 1)); return True
-                if self.back_btn_rect.collidepoint(pos): self.pause_pop(); return True
+                if self.back_btn_rect.collidepoint(pos):
+                    return "PAUSE_RESUME"
             elif view == "help":
-                if hasattr(self, 'help_back_rect') and self.help_back_rect.collidepoint(pos): self.pause_pop(); return True
-                if self.back_btn_rect.collidepoint(pos): self.pause_pop(); return True
+                if hasattr(self, 'help_back_rect') and self.help_back_rect.collidepoint(pos):
+                    self.pause_to_settings();
+                    return True
+                if self.back_btn_rect.collidepoint(pos):
+                    self.pause_to_settings();
+                    return True
             elif view == "item_manual":
-                if hasattr(self, 'item_manual_back_rect') and self.item_manual_back_rect.collidepoint(pos): self.pause_pop(); return True
+                if hasattr(self, 'item_manual_back_rect') and self.item_manual_back_rect.collidepoint(pos):
+                    self.pause_to_settings();
+                    return True
         if self.show_shop:
             if hasattr(self, 'shop_back_rect') and self.shop_back_rect.collidepoint(pos): self.show_shop = False; return True
         return False
