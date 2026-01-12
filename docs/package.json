@@ -1,0 +1,22 @@
+{
+  "name": "echo-trace-docs",
+  "version": "1.3.0",
+  "description": "Echo Trace Developer Documentation",
+  "type": "module",
+  "scripts": {
+    "docs:dev": "vitepress dev . --port 9962",
+    "docs:build": "vitepress build .",
+    "docs:preview": "vitepress preview ."
+  },
+  "keywords": [
+    "echo-trace",
+    "documentation",
+    "game-api"
+  ],
+  "author": "Echo Trace Team",
+  "license": "MIT",
+  "devDependencies": {
+    "vitepress": "^1.5.0",
+    "vue": "^3.5.13"
+  }
+}
