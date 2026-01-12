@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"echo_trace_server/logic"
+	pb "echo_trace_server/proto"
 
 	"github.com/gorilla/websocket"
+	"google.golang.org/protobuf/proto"
 )
 
 var Upgrader = websocket.Upgrader{
@@ -49,11 +51,18 @@ func (c *Client) readPump() {
 		c.Conn.Close()
 	}()
 	for {
-		_, message, err := c.Conn.ReadMessage()
+		messageType, message, err := c.Conn.ReadMessage()
 		if err != nil {
 			break
 		}
 
+		// 二进制消息 -> Protobuf
+		if messageType == websocket.BinaryMessage {
+			c.handleProtobufMessage(message)
+			continue
+		}
+
+		// 文本消息 -> JSON
 		var req map[string]interface{}
 		if err := json.Unmarshal(message, &req); err != nil {
 			continue
@@ -65,7 +74,7 @@ func (c *Client) readPump() {
 		}
 		typeCode := int(typeCodeFloat)
 
-		// Room Management Packets
+		// Room Management Packets (仍使用 JSON)
 		if typeCode == 1010 { // CREATE_ROOM
 			payload, _ := req["payload"].(map[string]interface{})
 			c.handleCreateRoom(payload)
@@ -390,8 +399,95 @@ func (c *Client) writePump() {
 				c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
-			c.Conn.WriteMessage(websocket.TextMessage, message)
+			// 检测消息类型：二进制（Protobuf）或文本（JSON）
+			// 简单启发式：尝试解析为 JSON，失败则视为二进制
+			var testJSON map[string]interface{}
+			if json.Unmarshal(message, &testJSON) == nil {
+				c.Conn.WriteMessage(websocket.TextMessage, message)
+			} else {
+				c.Conn.WriteMessage(websocket.BinaryMessage, message)
+			}
 		}
+	}
+}
+
+// handleProtobufMessage 处理 Protobuf 二进制消息
+func (c *Client) handleProtobufMessage(data []byte) {
+	if c.CurrentRoom == nil {
+		return // 游戏消息需要在房间内
+	}
+
+	// 解析 Envelope
+	var envelope pb.Envelope
+	if err := proto.Unmarshal(data, &envelope); err != nil {
+		log.Printf("Failed to unmarshal protobuf envelope: %v", err)
+		return
+	}
+
+	input := logic.PlayerInput{SessionID: c.SessionID}
+
+	switch envelope.Type {
+	case 2001: // MOVE_REQ
+		var moveReq pb.MoveInput
+		if err := proto.Unmarshal(envelope.Payload, &moveReq); err != nil {
+			return
+		}
+		input.Type = logic.InputMove
+		input.Dir = logic.Vector2{X: float64(moveReq.Dir.X), Y: float64(moveReq.Dir.Y)}
+		if moveReq.LookDir != nil {
+			input.LookDir = logic.Vector2{X: float64(moveReq.LookDir.X), Y: float64(moveReq.LookDir.Y)}
+			input.HasLookDir = true
+		}
+		c.CurrentRoom.GameLoop.InputChan <- input
+
+	case 2010: // FIRE_REQ
+		input.Type = logic.InputFire
+		c.CurrentRoom.GameLoop.InputChan <- input
+
+	case 2002: // USE_ITEM_REQ
+		var useItemReq pb.UseItemInput
+		if err := proto.Unmarshal(envelope.Payload, &useItemReq); err != nil {
+			return
+		}
+		input.Type = logic.InputUseItem
+		input.SlotIndex = int(useItemReq.SlotIndex)
+		c.CurrentRoom.GameLoop.InputChan <- input
+
+	case 2005: // DROP_REQ
+		var dropReq pb.DropInput
+		if err := proto.Unmarshal(envelope.Payload, &dropReq); err != nil {
+			return
+		}
+		input.Type = logic.InputDrop
+		input.SlotIndex = int(dropReq.SlotIndex)
+		c.CurrentRoom.GameLoop.InputChan <- input
+
+	case 2007: // BUY_REQ
+		var buyReq pb.BuyInput
+		if err := proto.Unmarshal(envelope.Payload, &buyReq); err != nil {
+			return
+		}
+		input.Type = logic.InputBuy
+		input.ItemID = buyReq.ItemId
+		c.CurrentRoom.GameLoop.InputChan <- input
+
+	case 2008: // SELL_REQ
+		var sellReq pb.SellInput
+		if err := proto.Unmarshal(envelope.Payload, &sellReq); err != nil {
+			return
+		}
+		input.Type = logic.InputSell
+		input.SlotIndex = int(sellReq.SlotIndex)
+		c.CurrentRoom.GameLoop.InputChan <- input
+
+	case 2006: // CHOOSE_TACTIC_REQ
+		var tacticReq pb.TacticInput
+		if err := proto.Unmarshal(envelope.Payload, &tacticReq); err != nil {
+			return
+		}
+		input.Type = logic.InputTactic
+		input.Tactic = tacticReq.Tactic
+		c.CurrentRoom.GameLoop.InputChan <- input
 	}
 }
 
