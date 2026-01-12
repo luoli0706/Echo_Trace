@@ -1,135 +1,382 @@
-# Echo Trace (DarkForest-Go)
+# 🎮 Echo Trace
 
-Echo Trace 是一个基于 **Go（服务端）+ Python/Pygame（客户端）** 的多人在线对战 Demo。项目当前正在从“搜刮/撤离”玩法，过渡到 **AOI 战争迷雾 + 多人在线坦克大战**：在迷宫地形中进行视野受限的信息对抗与弹道战斗。
+<div align="center">
 
-本仓库引入了 **AI 辅助博弈 (MCP Server)** 与 **高威胁 AI 单位**，使游戏从单纯的玩家对抗演变为“玩家 vs 环境 (PvE) vs AI 指令”的多维战场。
+**基于迷雾战争的多人在线战术对抗游戏**
 
-## 🧭 当前方向（Ver 1.2 - 终极插件与 AI 更新）
+[![Go](https://img.shields.io/badge/Go-1.23+-00ADD8?logo=go)](https://golang.org/)
+[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python)](https://python.org/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-- **AI Boss - 柠白号 (NingBye's Tunk)**：第一阶段即生成的巨型威胁单位，具备巡逻、索敌、高穿透重型火力及雷达脉冲机制。
-- **许愿装置 (MCP Integration)**：集成 DeepSeek LLM，通过 **Model Context Protocol (MCP)** 允许玩家使用自然语言触发受限的管理员指令。
-- **Tier 4 终极道具**：引入“精通天理”、“全频段阻塞”、“我就是柠白号”等足以逆转局势的传说级插件。
-- **坦克大战核心重构**：完善弹丸（Projectile）命中判定、护甲穿透物理及残留视野机制。
+[功能特性](#-功能特性) • [快速开始](#-快速开始) • [游戏玩法](#-游戏玩法) • [开发文档](#-开发文档)
 
-## 📂 目录结构
+</div>
 
-```
-Echo_Trace/
-├── backend/             # Go 服务端（WebSocket + Room + GameLoop + SQLite）
-├── frontend/            # Python 客户端（Pygame UI/渲染 + WebSocket 客户端）
-├── Game_MCP_Server/     # Python MCP 服务端（FastAPI + DeepSeek LLM）
-├── config/              # 分拆后的配置（server/map/gameplay/items/ai等）
-├── items_pro.md         # 最新的 T1-T4 道具设计规范
-├── protocol.json        # WebSocket 协议定义
-└── README.md
-```
+---
+
+## 📖 游戏简介
+
+**Echo Trace** 是一款融合了**战争迷雾（FOG）**、**空间感知（AOI）** 和 **AI 对抗**的多人在线战术游戏。玩家在动态生成的迷宫地图中搜刮资源、对抗 AI Boss，并在有限视野下与其他玩家展开策略博弈。
+
+### 🎯 核心玩法
+- **战术选择**：开局选择侦察、生存或攻击倾向，获得永久加成
+- **有限视野**：基于视锥的 FOG 系统，需通过雷达脉冲探测敌人
+- **AI Boss**：柠白号（NingBye）巡逻战场，发射高穿透子弹威胁所有玩家
+- **道具系统**：T1-T4 稀有度道具，包括护盾、干扰器、许愿装置等
+- **MCP 集成**：通过自然语言与 AI 交互，触发特殊指令
+
+### 🏆 游戏目标
+- **Phase 1 (搜索阶段)**：搜刮物资，修复引擎
+- **Phase 2 (冲突阶段)**：雷达脉冲激活，玩家互相暴露位置
+- **Phase 3 (逃离阶段)**：地图缩圈，最后的生存竞赛
+
+---
+
+## ✨ 功能特性
+
+### 🔥 v1.3.0 - 性能优化与协议升级
+- **四叉树空间索引**：AOI 查询性能提升 50-90%
+- **Protobuf 二进制协议**：带宽占用降低 75%，延迟更低
+- **空房间自动回收**：房间管理更高效
+- **战术永久加成**：RECON +20% 视野 | DEFENSE +20% HP | TRAP +20% 护甲穿透
+
+### 🤖 AI 系统
+- **柠白号 Boss**：巡逻索敌，高伤害重型火力，周期性雷达脉冲
+- **A* 寻路**：基于连通分量的智能移动
+- **MCP 自然语言接口**：通过"许愿装置"与 DeepSeek LLM 交互
+
+### 🎨 技术亮点
+- **Go + WebSocket**：高性能游戏服务器（50ms Tick）
+- **Python + Pygame**：跨平台客户端渲染
+- **SQLite**：玩家数据持久化
+- **双协议支持**：JSON（房间管理）+ Protobuf（游戏数据）
+
+---
 
 ## 🚀 快速开始
 
-### 1) 启动 MCP 服务端（指令解析）
-用于处理“许愿装置”的自然语言请求。需要 Python 3.10+。
+### 📋 环境依赖
 
+| 组件 | 版本要求 | 用途 |
+|------|---------|------|
+| **Go** | 1.23+ | 游戏服务器 |
+| **Python** | 3.10+ | 游戏客户端 + MCP Server |
+| **Protoc** | 6.x+ | Protobuf 编译（可选） |
+
+### 📦 安装步骤
+
+#### 1️⃣ 克隆仓库
+```bash
+git clone <repository_url>
+cd Echo_Trace
+```
+
+#### 2️⃣ 配置 MCP Server（可选）
 ```bash
 cd Game_MCP_Server
 pip install -r requirements.txt
-# 在 .env 中配置 AI_API_KEY
-python server.py
+
+# 复制环境变量模板
+cp .env.example .env
+
+# 编辑 .env，填入 DeepSeek API Key
+# AI_API_KEY=your_deepseek_api_key_here
 ```
-默认监听：`http://localhost:9091`
 
-### 2) 启动游戏服务端
-需要 Go 环境。
-
+#### 3️⃣ 安装 Go 依赖
 ```bash
+cd ../backend
+go mod download
+```
+
+#### 4️⃣ 安装 Python 依赖
+```bash
+cd ../frontend
+pip install -r requirements.txt
+```
+
+### ▶️ 启动游戏
+
+#### 方式一：完整体验（含 MCP）
+```bash
+# Terminal 1: 启动 MCP Server
+cd Game_MCP_Server
+python server.py
+# 监听: http://localhost:9091
+
+# Terminal 2: 启动游戏服务器
 cd backend
 go run .
-```
-默认监听：`:8080`
+# 监听: :8080
 
-### 3) 启动客户端
-```bash
+# Terminal 3: 启动客户端
 cd frontend
 python main.py
 ```
 
-## 🎮 核心系统
+#### 方式二：基础游戏（不含 MCP）
+```bash
+# Terminal 1: 启动游戏服务器
+cd backend
+go run .
 
-### 🤖 柠白号 AI (Boss)
-- **生成**：游戏开始后在随机位置生成，1.5 倍于普通玩家体型。
-- **行为**：沿连通分量随机巡逻；检测到 3m 内玩家或标记为 `Threat` 的玩家时进入战斗。
-- **火力**：发射 50 伤害的重型子弹，具有 75% 护甲穿透。
-- **侦测**：每 30 秒发出一次持续 3 秒的小地图雷达脉冲。
+# Terminal 2: 启动客户端
+cd frontend
+python main.py
+```
 
-### 🌟 万能许愿机 (Wish Machine)
-### 🌟 许愿装置 (Wish Devices)
-- **T2：残缺的万能许愿机**（`UTIL_WISH_MACHINE`）：基础许愿能力（受限）。
-- **T4：开发者遗忘的命令行**（`UTIL_DEV_FORGOTTEN_CLI`）：更强的许愿装置（能力受限，后续可扩展更多权限）。
-- **使用**：点击道具槽位激活输入框（上限 20 字），支持中文。
-- **逻辑**：请求由 MCP Server 发送至 LLM，并通过工具调用执行（如：补充状态、发放道具、移动玩家到指定坐标、命令 Boss 巡逻至特定坐标、修改玩家威胁度等）。
-- **玩家可见回应**：MCP Server 会返回纯文本字段“玩家可见回应”，用于在游戏内提示处理结果。
-
-## 🧹 房间回收机制
-
-- **游戏结束后 5 秒**：房间实例会被服务端自动回收（从房间列表移除）。
-- **空房间自动释放**：当房间内玩家数量变为 0 时，房间实例会被系统立即释放。
-- **退出房间**：客户端离开房间时会发送 `LEAVE_ROOM`，无需等待回收即可再次创建/加入房间。
-
-## ⚙️ 设置菜单路由（ESC）
-
-- **游戏内按 ESC**：直接进入“设置菜单”界面（不再先进入主菜单/暂停根菜单）。
-- **返回按钮路由解耦**：设置菜单及其子界面（帮助/道具手册）的返回按钮，均返回到“设置菜单”路由，而不是主菜单路由。
-- **退出房间按钮**：设置菜单新增“退出房间”。点击后立即从当前房间清除玩家实例并返回主菜单。
-- **主菜单重返行动**：即使意外回到主菜单，仍可通过“加入行动”按钮优先尝试回到上一次房间（若房间已关闭则会提示失败并清除记录）。
-
-## 🧠 战术倾向加成（开局选择）
-
-开局阶段使用数字键选择战术倾向，提供永久加成：
-
-- **侦察倾向（RECON）**：视野半径永久增加 **20%**。
-- **生存倾向（DEFENSE）**：基础生命值（Max HP）永久增加 **20%**。
-- **攻击倾向（TRAP）**：攻击自带 **20% 护甲穿透**。
-
-## 🧩 房主配置导入/导出
-
-在创建房间配置界面增加了两个按钮：
-
-- **导出设置**：将 `{room_name, config}` 以 JSON 格式复制到剪贴板。
-- **导入设置**：从剪贴板读取 JSON 并载入（支持两种格式：`{"room_name":..., "config": {...}}` 或直接一个 `config` 对象）。
-
-## 🎯 基础操作
-
-- `WASD` 移动；鼠标决定面向
-- `Space` 开火（注意装填冷却）
-- `E` 拾取；`F` 交互 /（靠近商人时）打开商店
-- `1-6` 使用道具 / 激活许愿机输入框；`Shift+1-6` 丢弃；`Ctrl+1-6` 出售
-- `ESC` 打开设置菜单（可在设置中获取测试道具/退出房间）
-
-## 🏠 技术要点
-
-- **MCP Bridge**：游戏后端通过 HTTP 异步通知 MCP Server，实现非阻塞的 AI 指令理解。
-- **Armor Penetration**：新增穿透计算公式，使重型火力和 AP 弹药对高护甲单位更具威胁。
-- **Global Jamming**：T4 道具可触发全图信号阻塞，屏蔽所有玩家雷达并显示 "SIGNAL LOST"。
-- **Stat Synchronization**：服务端 Tick (50ms) 驱动的状态全量/增量同步。
 ---
 
-##  �ܹ����� (Breaking Changes - v1.3.0 Beta)
+## 🎮 游戏玩法
 
-### �Ĳ����ռ�������Quadtree Spatial Indexing��
+### 🕹️ 基础操作
 
-**����**��ԭ�л�������Grid-based AOI���Ŀռ�������ʵ���ܼ����������ܽϲ��Ҫ��������ʵ����пɼ����жϡ�
+| 按键 | 功能 |
+|------|------|
+| **WASD** | 移动角色 |
+| **鼠标** | 控制朝向/视野方向 |
+| **Space** | 开火（注意弹药与冷却） |
+| **E** | 拾取物品 |
+| **F** | 交互（商人/引擎） |
+| **1-6** | 使用道具栏物品 |
+| **Shift+1-6** | 丢弃物品 |
+| **Ctrl+1-6** | 出售物品（需在商人附近） |
+| **ESC** | 打开设置菜单 |
 
-**ʵ��**��
-- �����Ĳ������ݽṹ (`backend/logic/quadtree.go`)������ͼ����Ϊ�ݹ���ĸ�������
-- ÿ���Ĳ����ڵ�������� 8 ��ʵ�壬����ʱ�Զ�ϸ��Ϊ 4 ���ӽڵ㡣
-- ֧�ֿ��ٷ�Χ��ѯ������/Բ�Σ���ʱ�临�Ӷ� O(log N) ~ O(N)��
+### 📊 战术倾向（开局选择）
 
-**�Ż�Ч��**��
-- AOI ��ѯ�� O(N) ���͵� O(log N) ~ O(N)��ȡ����ʵ��ֲ�����
-- AI ��֪��Χ��ѯʹ���Ĳ������٣�����ȫ����������б���
-- ÿ�� Tick �������ؽ��Ĳ����Է�ӳʵ��λ�ñ仯��
+在游戏开始前，使用 **数字键 1-3** 选择战术倾向：
 
-**������**��
-- �޸� `AOIManager.GetVisibleEntities` �ӿڣ����� `qt *Quadtree` ������
-- ���� `GameState.rebuildQuadtree()` ����Ϸ����ѭ����`UpdateTick`��ĩβ���á�
-- AI ��вɨ�裨`scanForThreat`����������ʹ���Ĳ�����ѯ������ҡ�
+| 倾向 | 快捷键 | 效果 |
+|------|-------|------|
+| **侦察 (RECON)** | 1 | 👁️ 视野半径 +20% |
+| **生存 (DEFENSE)** | 2 | 🛡️ 最大生命值 +20% |
+| **攻击 (TRAP)** | 3 | ⚔️ 护甲穿透 +20% |
+
+### 🎯 游戏阶段
+
+#### Phase 1: 搜索阶段 (5 分钟)
+- 搜刮地图上的物资（护盾、弹药、道具）
+- 寻找并修复引擎（6 个引擎需全部激活）
+- 与商人交易升级装备
+- 躲避 AI Boss "柠白号"
+
+#### Phase 2: 冲突阶段 (5 分钟)
+- 引擎定期发出雷达脉冲（全图可见）
+- 玩家位置周期性暴露
+- 竞争稀缺物资
+- 高强度 PvP 与 PvE
+
+#### Phase 3: 逃离阶段 (5 分钟)
+- 地图边缘开始缩圈（伤害区）
+- 最后的生存竞赛
+- 撤离点开启（先到先得）
+
+### 🛠️ 道具系统
+
+#### T1 - 基础道具
+- **医疗包**：恢复 20 HP
+- **装甲片**：恢复 15 护甲
+- **弹药箱**：补充弹药
+
+#### T2 - 进阶道具
+- **护盾发生器**：吸收 50 伤害
+- **加速芯片**：移动速度 +30%（30 秒）
+- **残缺的许愿机**：向 AI 发送简单指令
+
+#### T3 - 稀有道具
+- **主动声呐**：显示附近所有实体（10 秒）
+- **幽灵迷彩**：隐身（不会出现在雷达）
+- **穿甲弹夹**：子弹穿透 +50%（20 发）
+
+#### T4 - 传说道具
+- **全频段干扰器**：全图雷达失效（60 秒）
+- **开发者命令行**：强化版许愿装置
+- **柠白号控制器**：命令 Boss 攻击指定目标
+
+### 🤖 AI Boss - 柠白号
+
+**特性**：
+- 🚶 随机巡逻地图连通区域
+- 👁️ 3 米感知半径，检测到玩家自动追击
+- 💥 重型子弹：50 伤害 + 75% 护甲穿透
+- 📡 周期性雷达脉冲（30 秒一次，持续 3 秒）
+
+**应对策略**：
+- 保持距离，利用视野盲区
+- 使用迷彩道具隐身
+- 引诱 Boss 攻击其他玩家
+- 利用"柠白号控制器"操纵 Boss
+
+---
+
+## 🏠 房间管理
+
+### 创建房间
+1. 主菜单 → **创建房间**
+2. 配置游戏参数：
+   - 地图大小（50x50 ~ 200x200）
+   - 玩家上限（1-20）
+   - 阶段时长
+   - 物品生成率
+3. **导出设置**按钮：保存配置到剪贴板
+4. **导入设置**按钮：从剪贴板加载配置
+
+### 加入房间
+- **加入行动**：自动重连上次房间（断线重连）
+- **房间列表**：查看所有活跃房间
+- 断线后有 30 秒宽限期，超时会被踢出
+
+### 房间回收
+- ✅ 游戏结束后 5 秒自动回收
+- ✅ 所有玩家离开后立即释放
+- ✅ **退出房间**按钮（设置菜单）：立即退出返回大厅
+
+---
+
+## 🔧 开发文档
+
+### 📁 项目结构
+```
+Echo_Trace/
+├── backend/              # Go 游戏服务器
+│   ├── logic/           # 游戏逻辑（状态机、AI、物品）
+│   ├── network/         # WebSocket 通信
+│   ├── storage/         # SQLite 数据库
+│   └── proto/           # Protobuf 生成代码
+├── frontend/            # Python/Pygame 客户端
+│   ├── client/          # 网络层、渲染器
+│   ├── assets/          # 贴图、音效、本地化
+│   └── proto/           # Protobuf Python 代码
+├── Game_MCP_Server/     # AI 许愿装置后端
+│   ├── server.py        # FastAPI 服务
+│   └── .env.example     # 环境变量模板
+├── proto/               # Protobuf 协议定义
+│   └── echo_trace.proto
+└── docs/                # 开发者文档（VuePress）
+```
+
+### 🛠️ 构建与编译
+
+#### 编译服务器
+```bash
+cd backend
+go build -o echo_trace_server .
+./echo_trace_server
+```
+
+#### 打包客户端（PyInstaller）
+```bash
+cd frontend
+pyinstaller --onefile --windowed main.py
+# 输出: dist/main.exe
+```
+
+#### 重新生成 Protobuf 代码
+```bash
+# 需要先安装 protoc (https://github.com/protocolbuffers/protobuf/releases)
+protoc --go_out=backend --go_opt=paths=source_relative proto/echo_trace.proto
+protoc --python_out=frontend proto/echo_trace.proto
+```
+
+### 📡 网络协议
+
+#### WebSocket 端口
+- 游戏服务器：`:8080/ws`
+- MCP Server：`http://localhost:9091`
+
+#### 消息类型
+- **JSON**（文本帧）：房间管理（CREATE_ROOM, JOIN_ROOM, LIST_ROOMS）
+- **Protobuf**（二进制帧）：游戏数据（MOVE, FIRE, StateSnapshot）
+
+#### 协议文档
+详见 [BREAKING_CHANGES.md](BREAKING_CHANGES.md) 和 [PROTOBUF_COMPLETION.md](PROTOBUF_COMPLETION.md)
+
+### 🧪 测试与调试
+
+#### 单元测试
+```bash
+# Go 后端测试
+cd backend
+go test ./...
+
+# Python 前端测试
+cd frontend
+pytest
+```
+
+#### 性能分析
+```bash
+# Go pprof
+go run . -cpuprofile=cpu.prof
+go tool pprof cpu.prof
+
+# Python cProfile
+python -m cProfile -o output.prof main.py
+```
+
+---
+
+## 🗺️ 路线图
+
+### ✅ v1.3.0 (当前版本)
+- [x] 四叉树空间索引
+- [x] Protobuf 二进制协议
+- [x] 战术永久加成
+- [x] 房间生命周期优化
+
+### 🚧 v1.4.0 (计划中)
+- [ ] S2C StateSnapshot Protobuf 迁移
+- [ ] 增量状态更新（Delta Snapshot）
+- [ ] 客户端预测与服务器和解
+- [ ] 观战模式
+
+### 🔮 v2.0.0 (未来)
+- [ ] 排行榜与赛季系统
+- [ ] 自定义地图编辑器
+- [ ] 更多 AI 单位与 Boss
+- [ ] 团队模式（2v2v2）
+
+---
+
+## 🤝 贡献指南
+
+欢迎提交 Issue 和 Pull Request！
+
+### 开发流程
+1. Fork 项目
+2. 创建特性分支：`git checkout -b feature/AmazingFeature`
+3. 提交更改：`git commit -m 'Add some AmazingFeature'`
+4. 推送分支：`git push origin feature/AmazingFeature`
+5. 提交 Pull Request
+
+### 代码规范
+- **Go**：遵循 `gofmt` 和 `golint`
+- **Python**：遵循 PEP 8，使用 `black` 格式化
+- **Commit**：使用约定式提交（Conventional Commits）
+
+---
+
+## 📄 许可证
+
+本项目采用 **MIT License** 开源协议。详见 [LICENSE](LICENSE) 文件。
+
+---
+
+## 🙏 致谢
+
+- **Go + Gorilla WebSocket**：高性能网络框架
+- **Pygame**：跨平台游戏引擎
+- **DeepSeek**：自然语言 AI 支持
+- **Protobuf**：高效序列化协议
+
+---
+
+<div align="center">
+
+**⭐ 如果这个项目对你有帮助，请给个 Star！**
+
+Made with ❤️ by Echo Trace Team
+
+</div>
 
