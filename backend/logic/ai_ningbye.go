@@ -89,16 +89,32 @@ func (gs *GameState) scanForThreat(pos Vector2, radius float64) *Player {
 	var bestTarget *Player
 	minDist := radius * radius
 
-	for _, p := range gs.Players {
-		if !p.IsAlive || p.IsExtracted {
-			continue
+	// 使用四叉树加速查询附近玩家
+	var candidatePlayers []*Player
+	if gs.Quadtree != nil {
+		nearbyEntities := gs.Quadtree.QueryRadius(pos.X, pos.Y, radius)
+		for _, e := range nearbyEntities {
+			if p, ok := gs.Players[e.UID]; ok && p.IsAlive && !p.IsExtracted {
+				candidatePlayers = append(candidatePlayers, p)
+			}
 		}
+	} else {
+		// Fallback：遍历所有玩家
+		for _, p := range gs.Players {
+			if !p.IsAlive || p.IsExtracted {
+				continue
+			}
+			candidatePlayers = append(candidatePlayers, p)
+		}
+	}
+
+	for _, p := range candidatePlayers {
 		// Check distance
 		dist2 := (p.Pos.X-pos.X)*(p.Pos.X-pos.X) + (p.Pos.Y-pos.Y)*(p.Pos.Y-pos.Y)
-		
+
 		// Condition 1: Explicit Threat Flag (within sensing radius)
 		isTarget := p.IsThreat && dist2 <= minDist
-		
+
 		// Condition 2: Too Close (Self-Defense, 3.0m)
 		if !isTarget && dist2 <= 9.0 {
 			isTarget = true
@@ -133,7 +149,7 @@ func (gs *GameState) aiCombatBehavior(ent *Entity, data *NingByeAI, target *Play
 
 	// Fire!
 	data.LastFireTime = now
-	
+
 	// Create Projectile
 	dir := Vector2{X: target.Pos.X - ent.Pos.X, Y: target.Pos.Y - ent.Pos.Y}
 	dist := math.Sqrt(dir.X*dir.X + dir.Y*dir.Y)
@@ -144,14 +160,14 @@ func (gs *GameState) aiCombatBehavior(ent *Entity, data *NingByeAI, target *Play
 
 	speed := 12.0
 	uid := NewUID()
-	
+
 	proj := ProjectileData{
-		OwnerID:     "AI_NINGBYE",
-		Velocity:    Vector2{X: dir.X * speed, Y: dir.Y * speed},
-		Damage:      data.Damage,
-		Radius:      0.4,
-		Lifetime:    now.Add(5 * time.Second),
-		BouncesLeft: 0,
+		OwnerID:          "AI_NINGBYE",
+		Velocity:         Vector2{X: dir.X * speed, Y: dir.Y * speed},
+		Damage:           data.Damage,
+		Radius:           0.4,
+		Lifetime:         now.Add(5 * time.Second),
+		BouncesLeft:      0,
 		ArmorPenetration: data.ArmorPenetration,
 	}
 
@@ -196,7 +212,9 @@ func (gs *GameState) aiMoveBehavior(ent *Entity, data *NingByeAI, dt float64) {
 			candidates := []Vector2{}
 			for dy := -1; dy <= 1; dy++ {
 				for dx := -1; dx <= 1; dx++ {
-					if dx == 0 && dy == 0 { continue }
+					if dx == 0 && dy == 0 {
+						continue
+					}
 					nx, ny := currX+dx, currY+dy
 					if gs.Map.IsWalkable(float64(nx), float64(ny)) {
 						candidates = append(candidates, Vector2{X: float64(nx) + 0.5, Y: float64(ny) + 0.5})
@@ -216,7 +234,7 @@ func (gs *GameState) aiMoveBehavior(ent *Entity, data *NingByeAI, dt float64) {
 		// Move towards target
 		dir := Vector2{X: target.X - ent.Pos.X, Y: target.Y - ent.Pos.Y}
 		dist := math.Sqrt(dir.X*dir.X + dir.Y*dir.Y)
-		
+
 		moveDist := data.MoveSpeed * dt
 		if gs.Config != nil && gs.Config.AI.NingBye.MoveSpeed > 0 {
 			moveDist = gs.Config.AI.NingBye.MoveSpeed * dt
@@ -238,7 +256,7 @@ func (gs *GameState) aiMoveBehavior(ent *Entity, data *NingByeAI, dt float64) {
 func (gs *GameState) findPath(start, end Vector2) []Vector2 {
 	sx, sy := int(start.X), int(start.Y)
 	ex, ey := int(end.X), int(end.Y)
-	
+
 	// Boundary check
 	if !gs.Map.IsWalkable(float64(ex), float64(ey)) {
 		return nil
@@ -250,7 +268,7 @@ func (gs *GameState) findPath(start, end Vector2) []Vector2 {
 	cameFrom[Point{sx, sy}] = Point{-1, -1}
 
 	found := false
-	
+
 	// Max steps to prevent lag
 	steps := 0
 	for len(queue) > 0 && steps < 500 {
@@ -287,7 +305,7 @@ func (gs *GameState) findPath(start, end Vector2) []Vector2 {
 		path = append([]Vector2{{X: float64(curr.X) + 0.5, Y: float64(curr.Y) + 0.5}}, path...)
 		curr = cameFrom[curr]
 		if curr.X == sx && curr.Y == sy {
-			break 
+			break
 		}
 	}
 	return path
@@ -307,7 +325,7 @@ func (gs *GameState) SetPlayerThreat(sessionID string, isThreat bool) bool {
 func (gs *GameState) CommandAI(targetX, targetY float64) bool {
 	gs.Mutex.Lock()
 	defer gs.Mutex.Unlock()
-	
+
 	// Find AI
 	for uid, e := range gs.Entities {
 		if e.Type == EntityTypeNingBye {

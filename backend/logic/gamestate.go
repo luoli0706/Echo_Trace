@@ -34,6 +34,7 @@ type GameState struct {
 	Players           map[string]*Player
 	Entities          map[string]Entity
 	AOI               *AOIManager
+	Quadtree          *Quadtree // 四叉树空间索引
 	Phase             int
 	PhaseTimer        float64
 	RespawnTimer      float64
@@ -59,13 +60,23 @@ func NewGameState(cfg *GameConfig) *GameState {
 	if cfg != nil && cfg.Phases.Phase2.PulseIntervalSec > 0 {
 		pulse = float64(cfg.Phases.Phase2.PulseIntervalSec)
 	}
+
+	// 创建四叉树边界 (覆盖整个地图)
+	boundary := Rect{
+		X:      float64(cfg.Map.Width) / 2,
+		Y:      float64(cfg.Map.Height) / 2,
+		Width:  float64(cfg.Map.Width) / 2,
+		Height: float64(cfg.Map.Height) / 2,
+	}
+
 	return &GameState{
 		Config:       cfg,
 		Map:          m,
 		Players:      make(map[string]*Player),
 		Entities:     make(map[string]Entity),
 		AOI:          NewAOIManager(cfg.Map.Width, cfg.Map.Height),
-		Phase:        PhaseInit, // Start in Init Phase
+		Quadtree:     NewQuadtree(boundary, 8), // 每个节点最多8个实体
+		Phase:        PhaseInit,                // Start in Init Phase
 		PhaseTimer:   float64(cfg.Phases.Phase1.Duration),
 		RespawnTimer: respawn,
 		PulseTimer:   pulse,
@@ -1437,6 +1448,9 @@ func (gs *GameState) UpdateTick(dt float64) {
 	if gs.Phase >= PhaseSearch && gs.Phase <= PhaseEscape {
 		gs.UpdateNingByeAI(dt)
 	}
+
+	// 7. Rebuild Quadtree (重建四叉树以反映实体位置变化)
+	gs.rebuildQuadtree()
 }
 
 func (gs *GameState) updateProjectiles(dt float64) {
@@ -1864,7 +1878,7 @@ func (gs *GameState) GetSnapshot(sessionID string) map[string]interface{} {
 		if gs.Config != nil && gs.Config.Gameplay.FOVDegrees > 0 {
 			fov = gs.Config.Gameplay.FOVDegrees
 		}
-		visiblePlayers, visibleEntities = gs.AOI.GetVisibleEntities(p, gs.Map, gs.Players, entSlice, fov)
+		visiblePlayers, visibleEntities = gs.AOI.GetVisibleEntities(p, gs.Map, gs.Players, entSlice, fov, gs.Quadtree)
 	}
 
 	// Radar Logic: Calculate Blips
@@ -1986,6 +2000,39 @@ func (gs *GameState) GetSnapshot(sessionID string) map[string]interface{} {
 			"events": soundEvents,
 		},
 	}
+}
+
+// rebuildQuadtree 重建四叉树，包含所有玩家和实体
+func (gs *GameState) rebuildQuadtree() {
+	if gs.Quadtree == nil {
+		return
+	}
+
+	// 创建实体列表
+	allEntities := make([]QuadtreeEntity, 0, len(gs.Players)+len(gs.Entities))
+
+	// 添加玩家实体
+	for _, p := range gs.Players {
+		if p != nil && p.IsAlive {
+			allEntities = append(allEntities, QuadtreeEntity{
+				UID: p.SessionID,
+				X:   p.Pos.X,
+				Y:   p.Pos.Y,
+			})
+		}
+	}
+
+	// 添加游戏实体（物品、子弹等）
+	for uid, e := range gs.Entities {
+		allEntities = append(allEntities, QuadtreeEntity{
+			UID: uid,
+			X:   e.Pos.X,
+			Y:   e.Pos.Y,
+		})
+	}
+
+	// 重建四叉树
+	gs.Quadtree.Rebuild(allEntities)
 }
 
 func (gs *GameState) spawnRandomItemInternal() {

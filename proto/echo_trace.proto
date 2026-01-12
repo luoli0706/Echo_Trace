@@ -1,0 +1,159 @@
+syntax = "proto3";
+
+package echo_trace;
+
+option go_package = "echo_trace_server/proto";
+
+// ========== Common Types ==========
+
+message Vector2 {
+  double x = 1;
+  double y = 2;
+}
+
+message Item {
+  string id = 1;
+  string type = 2;
+  string name = 3;
+  int32 max_uses = 4;
+  int32 uses_left = 5;
+  double weight = 6;
+  int32 tier = 7;
+  int32 value = 8;
+}
+
+// ========== Client to Server Messages ==========
+
+message MoveInput {
+  Vector2 dir = 1;
+  Vector2 look_dir = 2;
+  bool has_look_dir = 3;
+}
+
+message UseItemInput {
+  int32 slot_index = 1;
+}
+
+message DropInput {
+  int32 slot_index = 1;
+}
+
+message BuyInput {
+  string item_id = 1;
+}
+
+message SellInput {
+  int32 slot_index = 1;
+}
+
+message TacticInput {
+  string tactic = 1;  // RECON, DEFENSE, TRAP
+}
+
+// Generic C2S payload
+message C2SMessage {
+  oneof payload {
+    MoveInput move = 1;
+    UseItemInput use_item = 2;
+    bool interact = 3;
+    bool pickup = 4;
+    DropInput drop = 5;
+    TacticInput tactic = 6;
+    BuyInput buy = 7;
+    SellInput sell = 8;
+    bool shop_refresh = 9;
+    bool fire = 10;
+    bool dev_skip = 99;
+  }
+}
+
+// ========== Server to Client Messages ==========
+
+message EntitySnapshot {
+  string uid = 1;
+  string type = 2;
+  Vector2 pos = 3;
+  int32 state = 4;
+  bytes extra = 5;  // Serialized type-specific data (Motor/Supply/Projectile/AI)
+}
+
+message PlayerSnapshot {
+  string session_id = 1;
+  string name = 2;
+  Vector2 pos = 3;
+  Vector2 look_dir = 4;
+  double hp = 5;
+  double max_hp = 6;
+  double armor = 7;
+  double max_armor = 8;
+  int32 kills = 9;
+  bool is_alive = 10;
+  repeated Item inventory = 11;
+  int32 funds = 12;
+  string client_msg = 13;
+  string ammo_type = 14;
+  int32 ammo_count = 15;
+  int32 inventory_cap = 16;
+}
+
+message RadarBlip {
+  string type = 1;
+  Vector2 pos = 2;
+}
+
+message GameEvent {
+  string type = 1;
+  string msg = 2;
+}
+
+// Full state snapshot (sent per player per tick)
+message StateSnapshot {
+  int32 phase = 1;
+  double time_left = 2;
+  int32 total_kills = 3;
+  bool jammer_active = 4;
+  
+  // My state
+  PlayerSnapshot my_state = 5;
+  
+  // Other players (visible)
+  repeated PlayerSnapshot other_players = 6;
+  
+  // Entities
+  repeated EntitySnapshot entities = 7;
+  
+  // Radar
+  repeated RadarBlip radar_blips = 8;
+  
+  // Events (ring buffer, last 5)
+  repeated GameEvent events = 9;
+  
+  // Shop (if near merchant)
+  repeated string shop_stock = 10;
+  repeated int32 shop_prices = 11;
+  repeated string shop_types = 12;
+}
+
+// Map data (sent once at game start)
+message MapData {
+  int32 width = 1;
+  int32 height = 2;
+  repeated int32 tiles = 3;  // Flattened row-major array
+  Vector2 spawn_pos = 4;
+  repeated Item inventory = 5;
+}
+
+message S2CMessage {
+  oneof payload {
+    StateSnapshot snapshot = 1;
+    MapData map_data = 2;
+  }
+}
+
+// ========== Message Envelope ==========
+// Top-level wrapper for all WS binary messages
+
+message Envelope {
+  int32 type = 1;  // Message type code (matches legacy protocol.json)
+  bytes payload = 2;  // Serialized C2SMessage or S2CMessage
+}
