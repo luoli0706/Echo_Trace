@@ -211,7 +211,7 @@ func (aoi *AOIManager) GetVisibleEntities(
 
 ---
 
-## ⏳ Protobuf 二进制协议（计划中）
+## ⏳ Protobuf 二进制协议（✅ 基础实现完成）
 
 ### 动机
 
@@ -228,9 +228,9 @@ func (aoi *AOIManager) GetVisibleEntities(
 - 客户端←→MCP Server 通信
 
 **迁移至 Protobuf 的场景**：
-- 玩家输入（移动、开火、使用道具）
-- 状态快照（每 50ms 一次）
-- 子弹位置更新
+- ✅ 玩家输入（移动、开火、使用道具）
+- ⏳ 状态快照（每 50ms 一次）
+- ⏳ 子弹位置更新
 
 ### Proto 定义
 
