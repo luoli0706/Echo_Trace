@@ -21,7 +21,10 @@ export default defineConfig({
           text: 'WebSocket API',
           items: [
             { text: 'API 概述', link: '/api/' },
-            { text: '房间管理', link: '/api/room-management' }
+            { text: '房间管理', link: '/api/room-management' },
+            { text: '游戏操作', link: '/api/game-actions' },
+            { text: '状态快照', link: '/api/state-snapshot' },
+            { text: 'MCP Server', link: '/api/mcp-server' }
           ]
         }
       ],
@@ -29,7 +32,9 @@ export default defineConfig({
         {
           text: 'Protobuf 协议',
           items: [
-            { text: '协议定义', link: '/protobuf/' }
+            { text: '协议定义', link: '/protobuf/' },
+            { text: '消息类型', link: '/protobuf/message-types' },
+            { text: '迁移指南', link: '/protobuf/migration-guide' }
           ]
         }
       ],
@@ -37,7 +42,10 @@ export default defineConfig({
         {
           text: '游戏逻辑',
           items: [
-            { text: '游戏阶段', link: '/game-logic/phases' }
+            { text: '游戏阶段', link: '/game-logic/phases' },
+            { text: '道具系统', link: '/game-logic/items' },
+            { text: 'AI Boss', link: '/game-logic/ai-boss' },
+            { text: '空间索引', link: '/game-logic/spatial-indexing' }
           ]
         }
       ]
