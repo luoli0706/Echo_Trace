@@ -374,7 +374,7 @@ def process_wish(req: WishRequest):
         - If the user asks for restricted actions, politely deny them citing 'Insufficient Permissions'.
         """
 
-    # 1. Call LLM
+    # 1. Initialize Loop
     messages = [
         {"role": "system", "content": f"""You are a Game Master for Echo Trace. Interpret the user's wish and call the appropriate tools to fulfill it.
 
@@ -412,113 +412,133 @@ If valid, execute. If ambiguous, guess."""},
             AI_API_URL,
             headers={"Authorization": f"Bearer {AI_API_KEY}", "Content-Type": "application/json"},
             json=p,
-            timeout=10,
+            timeout=30, # Increased timeout for multi-turn
         )
         resp.raise_for_status()
         return resp.json()
 
-    try:
-        data = call_llm(messages)
-        print(f"[MCP DEBUG] LLM Response: {json.dumps(data, ensure_ascii=False)}")
-    except Exception as e:
-        print(f"[MCP DEBUG] LLM Call Error: {str(e)}")
-        return {"status": "error", "results": [], "玩家可见回应": sanitize_plain_text("许愿系统暂时不可用，请稍后重试。")}
+    turn_count = 0
+    max_turns = 5
+    all_results = []
+    final_reply_text = ""
+    last_action_summary = ""
 
-    # 2. Process Tool Calls
-    results = []
-    choice = data.get("choices", [{}])[0]
-    message = choice.get("message", {})
-    tool_calls = message.get("tool_calls", [])
+    while turn_count < max_turns:
+        turn_count += 1
+        print(f"[MCP DEBUG] Turn {turn_count}/{max_turns}")
 
-    if not tool_calls:
-        print("[MCP DEBUG] No tool calls in response. Retrying once...")
-        retry_messages = [
-            messages[0],
-            {"role": "system", "content": "Second attempt: You MUST call at least one available tool if possible. If impossible, reply with a short plain-text reason asking the player to re-enter."},
-            messages[1],
-        ]
         try:
-            data = call_llm(retry_messages)
-            choice = data.get("choices", [{}])[0]
-            message = choice.get("message", {})
-            tool_calls = message.get("tool_calls", [])
+            data = call_llm(messages)
+            # print(f"[MCP DEBUG] LLM Response: {json.dumps(data, ensure_ascii=False)}")
         except Exception as e:
-            print(f"[MCP DEBUG] LLM Retry Error: {str(e)}")
-            tool_calls = []
+            print(f"[MCP DEBUG] LLM Call Error: {str(e)}")
+            return {"status": "error", "results": [], "玩家可见回应": sanitize_plain_text("许愿系统暂时不可用，请稍后重试。")}
 
-    if not tool_calls:
-        return {"status": "needs_retry", "results": [], "玩家可见回应": sanitize_plain_text(message.get("content", "指令无法执行（权限不足或意图不明）。"))}
-
-    for tc in tool_calls:
-        func_name = tc["function"]["name"]
-        args_str = tc["function"]["arguments"]
-        print(f"[MCP DEBUG] Tool Call: {func_name} Args: {args_str}")
-        try:
-            args = json.loads(args_str)
-            if func_name in TOOL_MAP:
-                if "session_id" not in args and "session_id" in tc["function"]["arguments"]: 
-                     pass
-                
-                # Validation: T2 can only teleport SELF
-                if not is_t4 and func_name == "move_player_to_coordinate":
-                    target_sid = args.get("session_id")
-                    if target_sid != req.session_id:
-                        results.append(f"{func_name}: DENIED (Tier 2 can only teleport self)")
-                        continue
-
-                if not is_t4 and func_name in ("modify_global_health", "command_ai_patrol", "set_player_threat"):
-                     results.append(f"{func_name}: DENIED (Tier 2 Restriction)")
-                     continue
-
-                res = TOOL_MAP[func_name](**args)
-                print(f"[MCP DEBUG] Tool Result: {res}")
-                results.append(f"{func_name}: {res}")
-            else:
-                results.append(f"{func_name}: Unknown Tool")
-        except Exception as e:
-            print(f"[MCP DEBUG] Tool Error: {e}")
-            results.append(f"{func_name}: Error {str(e)}")
-
-    ok_count = sum(1 for r in results if isinstance(r, str) and "Success:" in r)
-    reply = f"已执行 {len(results)} 个指令（成功 {ok_count} 个）。"
-    if ok_count == 0 and len(results) > 0:
-        reply = "指令执行失败或被拒绝。"
-    
-    # Process LLM Text for Summary
-    llm_text = message.get("content", "")
-    action_summary = ""
-    
-    if llm_text:
-        # Check for [[SUMMARY]] token
-        match = re.search(r"\[\[SUMMARY\]\](.*)", llm_text, re.DOTALL)
-        if match:
-            action_summary = match.group(1).strip()
-            # Remove summary from visible reply
-            llm_text = llm_text.replace(match.group(0), "").strip()
+        choice = data.get("choices", [{}])[0]
+        message = choice.get("message", {})
+        tool_calls = message.get("tool_calls", [])
         
-        reply = f"{sanitize_plain_text(llm_text)}"
+        # Capture text content
+        content = message.get("content", "")
+        if content:
+            final_reply_text = content # Keep updating with latest text
+            # Check for summary
+            match = re.search(r"\[\[SUMMARY\]\](.*)", content, re.DOTALL)
+            if match:
+                last_action_summary = match.group(1).strip()
+                final_reply_text = content.replace(match.group(0), "").strip()
 
-    # Fallback if LLM didn't provide summary, use heuristic
-    if not action_summary:
-        summary_parts = []
+        # If no tool calls, we are done
+        if not tool_calls:
+            break
+        
+        # Append Assistant Message to history (Must include tool_calls if present)
+        messages.append(message)
+
+        # Execute Tools
         for tc in tool_calls:
-            fn = tc["function"]["name"]
-            if fn == "add_items_to_inventory": summary_parts.append("物资配发")
-            elif fn == "modify_player_health": summary_parts.append("生命调整")
-            elif fn == "move_player_to_coordinate": summary_parts.append("传送")
-            elif fn == "command_ai_patrol": summary_parts.append("AI部署")
-            elif fn == "set_player_threat": summary_parts.append("威胁更新")
-            elif fn == "modify_global_health": summary_parts.append("世界重塑")
+            func_name = tc["function"]["name"]
+            args_str = tc["function"]["arguments"]
+            call_id = tc["id"]
+            
+            print(f"[MCP DEBUG] Tool Call: {func_name} Args: {args_str}")
+            
+            tool_result_str = ""
+            
+            try:
+                args = json.loads(args_str)
+                if func_name in TOOL_MAP:
+                    # Validation Logic
+                    if "session_id" not in args and "session_id" in tc["function"]["arguments"]: 
+                        pass # Should parse properly
+                    
+                    # Permission Checks
+                    denied = False
+                    if not is_t4 and func_name == "move_player_to_coordinate":
+                        target_sid = args.get("session_id")
+                        if target_sid != req.session_id:
+                            denied = True
+                            tool_result_str = f"DENIED (Tier 2 can only teleport self)"
+
+                    if not is_t4 and func_name in ("modify_global_health", "command_ai_patrol", "set_player_threat"):
+                         denied = True
+                         tool_result_str = f"DENIED (Tier 2 Restriction)"
+                    
+                    if denied:
+                         all_results.append(f"{func_name}: {tool_result_str}")
+                    else:
+                        res = TOOL_MAP[func_name](**args)
+                        print(f"[MCP DEBUG] Tool Result: {res}")
+                        tool_result_str = str(res)
+                        all_results.append(f"{func_name}: {res}")
+                else:
+                    tool_result_str = "Unknown Tool"
+                    all_results.append(f"{func_name}: Unknown Tool")
+            except Exception as e:
+                print(f"[MCP DEBUG] Tool Error: {e}")
+                tool_result_str = f"Error: {str(e)}"
+                all_results.append(f"{func_name}: Error {str(e)}")
+
+            # Append Tool Result to history
+            messages.append({
+                "role": "tool",
+                "tool_call_id": call_id,
+                "content": tool_result_str
+            })
+
+    # 3. Finalize Response
+    ok_count = sum(1 for r in all_results if isinstance(r, str) and "Success:" in r)
+    
+    # If LLM gave a text reply, use it. Otherwise, generate a generic one.
+    reply = ""
+    if final_reply_text:
+        reply = sanitize_plain_text(final_reply_text)
+    else:
+        reply = f"已执行 {len(all_results)} 个指令（成功 {ok_count} 个）。"
+    
+    # Fallback Summary
+    if not last_action_summary:
+        summary_parts = []
+        for r in all_results:
+            if "Success" not in r: continue
+            if "add_items" in r: summary_parts.append("物资配发")
+            elif "health" in r: summary_parts.append("生命调整")
+            elif "move" in r: summary_parts.append("传送")
+            elif "patrol" in r: summary_parts.append("AI部署")
+            elif "threat" in r: summary_parts.append("威胁更新")
+            elif "global" in r: summary_parts.append("世界重塑")
         if summary_parts:
-            action_summary = " & ".join(summary_parts)
+            # deduplicate
+            summary_parts = list(set(summary_parts))
+            last_action_summary = " & ".join(summary_parts)
         else:
-            action_summary = "System Action"
+            last_action_summary = "System Action"
 
     # Prefix with Tier info
     tier_prefix = "[T4]" if is_t4 else "[T2]"
-    action_summary = f"{tier_prefix} {action_summary}"
+    action_summary = f"{tier_prefix} {last_action_summary}"
 
-    return {"status": "success", "results": results, "玩家可见回应": reply, "action_summary": action_summary}
+    return {"status": "success", "results": all_results, "玩家可见回应": reply, "action_summary": action_summary}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=9091)

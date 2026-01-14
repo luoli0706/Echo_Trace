@@ -642,7 +642,55 @@ AI_MODEL=deepseek-chat
 }
 ```
 
-### DeepSeek 集成
+### DeepSeek 集成 (ReAct 循环)
+
+#### 多轮对话架构
+
+MCP Server 实现了 **ReAct (Reasoning + Acting)** 循环，支持最大 5 轮的多步操作。这意味着 AI 可以先查询信息（如“获取玩家列表”），根据结果进行推理（如“计算最近的玩家”），然后再执行下一步操作（如“传送”），而无需用户多次输入。
+
+#### 核心逻辑 (Python 伪代码)
+
+```python
+SYSTEM_PROMPT = """... (定义工具和规则) ..."""
+
+def process_wish(wish_text: str):
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": wish_text}
+    ]
+    
+    turn_count = 0
+    max_turns = 5
+    
+    while turn_count < max_turns:
+        # 1. 调用 LLM
+        response = call_llm(messages)
+        message = response.choices[0].message
+        
+        # 2. 如果没有工具调用，结束循环
+        if not message.tool_calls:
+            final_reply = message.content
+            break
+            
+        # 3. 将 AI 的思考过程加入历史
+        messages.append(message)
+        
+        # 4. 执行工具
+        for tool_call in message.tool_calls:
+            # 执行本地函数
+            result = execute_tool(tool_call.function.name, tool_call.function.arguments)
+            
+            # 5. 将工具结果加入历史
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": str(result)
+            })
+            
+        turn_count += 1
+        
+    return final_reply
+```
 
 #### Prompt 模板
 
