@@ -33,6 +33,9 @@ class GameState:
         self.toast_msg = ""
         self.toast_until = 0.0
         
+        # Last AI Action summary
+        self.last_ai_action = ""
+        
         # Global State
         self.phase = 0 # Default Init
         self.time_left = 0
@@ -103,6 +106,8 @@ class GameState:
                 except Exception:
                     self.toast_until = 0.0
                 self.toast_msg = msg
+            
+            self.last_ai_action = s.get("last_ai_action", "")
 
         if "vision" in payload:
             # Mark all existing as stale (not seen in this frame yet)

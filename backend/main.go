@@ -86,6 +86,7 @@ func main() {
 	// Admin / Cheat APIs
 	mux.HandleFunc("/api/wish", handleWish)
 	mux.HandleFunc("/admin/player/health", handleAdminModifyHealth)
+	mux.HandleFunc("/admin/player/health/global", handleAdminModifyGlobalHealth)
 	mux.HandleFunc("/admin/player/armor", handleAdminModifyArmor)
 	mux.HandleFunc("/admin/player/inventory/capacity", handleAdminModifyCapacity)
 	mux.HandleFunc("/admin/player/inventory/item", handleAdminAddItem)

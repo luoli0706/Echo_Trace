@@ -827,13 +827,18 @@ class Renderer:
         return pts
 
     def draw_game(self, state):
-        if self.state == "CONNECT": self.draw_connect(); return
-        if self.state == "LOGIN": self.draw_login(); return
-        if self.state == "MENU": self.draw_menu(); return
-        if self.state == "CONFIG": self.draw_config(); return
-        if self.state == "ROOM_LIST": self.draw_room_list(); return
+        # 1. Non-game states: Render and return immediately.
+        if self.state in ["CONNECT", "LOGIN", "MENU", "CONFIG", "ROOM_LIST"]:
+            if self.state == "CONNECT": self.draw_connect()
+            elif self.state == "LOGIN": self.draw_login()
+            elif self.state == "MENU": self.draw_menu()
+            elif self.state == "CONFIG": self.draw_config()
+            elif self.state == "ROOM_LIST": self.draw_room_list()
+            return
 
-        # Apply gameplay-tuning config once after joining.
+        # 2. Game World Rendering (GAME or PAUSE)
+        
+        # Apply runtime config (once)
         if not getattr(self, "_runtime_cfg_applied", False):
             cfg = getattr(state, "config", None)
             if isinstance(cfg, dict):
@@ -846,13 +851,21 @@ class Renderer:
                     if isinstance(fr, (int, float)) and 12 <= int(fr) <= 720:
                         self.fov_ray_count = int(fr)
             self._runtime_cfg_applied = True
+
         self.screen.fill(COLOR_BG)
-        if state.phase == 0 and self.state != "PAUSE": self.draw_lobby(state); return
+
+        # Lobby / Spectator / Camera Setup
+        if state.phase == 0 and self.state != "PAUSE": 
+            self.draw_lobby(state)
+            return
+
         if getattr(state, "is_extracted", False) and self.spectator_mode:
             cam_x, cam_y = self.cam_offset[0] * GRID_SIZE, self.cam_offset[1] * GRID_SIZE
         else:
             cam_x, cam_y = state.my_pos[0] * GRID_SIZE, state.my_pos[1] * GRID_SIZE
             self.cam_offset = [state.my_pos[0], state.my_pos[1]]
+
+        # Map Tiles
         if state.map_tiles:
             s_c = max(0, int(self.cam_offset[0] - 22)); e_c = int(self.cam_offset[0] + 22)
             s_r = max(0, int(self.cam_offset[1] - 17)); e_r = int(self.cam_offset[1] + 17)
@@ -863,18 +876,21 @@ class Renderer:
                     pygame.draw.rect(self.screen, COLOR_GRID, rect, 1)
                     if state.map_tiles[y][x] == 1:
                         pygame.draw.rect(self.screen, COLOR_WALL, rect); pygame.draw.rect(self.screen, COLOR_WALL_EDGE, rect, 1)
+        
+        # Entities & Players
         half = GRID_SIZE // 2
+        rd = GRID_SIZE // 4 
+
+        # Draw World Entities
         for ent in state.entities:
-            if self.hide_world_entities:
-                continue
-            # Server snapshot already applies AOI (FOV + LOS). Client fog will hide out-of-FOV.
+            if self.hide_world_entities: continue
             sx, sy = self.world_to_screen(ent["pos"]["x"], ent["pos"]["y"], cam_x, cam_y)
             tl = (sx - half, sy - half)
+            
             if ent["type"] == "ITEM_DROP":
                 if "ITEM_DROP" in self.assets: self.screen.blit(self.assets["ITEM_DROP"], tl)
                 else: self.draw_text_centered("📦", sx, sy, (255, 255, 0))
-
-                # Drop hint (colored by Item.type)
+                # Drop hint
                 ex = ent.get("extra")
                 if isinstance(ex, dict):
                     iid = ex.get("id") or ex.get("ID")
@@ -885,8 +901,7 @@ class Renderer:
                         try:
                             s_ab = self.hud_font.render(ab, True, col)
                             self.screen.blit(s_ab, s_ab.get_rect(center=(sx, sy + half + 10)))
-                        except Exception:
-                            pass
+                        except Exception: pass
             elif ent["type"] == "SUPPLY_DROP":
                 pygame.draw.circle(self.screen, COLOR_SUPPLY_DROP, (sx, sy), GRID_SIZE, 1)
                 if "SUPPLY_DROP" in self.assets: self.screen.blit(self.assets["SUPPLY_DROP"], tl)
@@ -903,118 +918,81 @@ class Renderer:
             elif ent["type"] == "EXIT":
                 pygame.draw.rect(self.screen, COLOR_EXIT, (tl[0], tl[1], GRID_SIZE, GRID_SIZE), 0); self.draw_text_centered("E", sx, sy, (0, 0, 0))
             elif ent["type"] == "NING_BYE":
-                # Draw Boss Unit (1.5x size)
                 boss_size = int(GRID_SIZE * 1.5)
-                offset = (boss_size - GRID_SIZE) // 2
-                
-                # tl is top-left of the standard grid cell. 
-                # We want to center the 1.5x box on the cell center.
-                # Center of cell: sx, sy.
-                # Top-left of boss: sx - boss_size//2, sy - boss_size//2
-                
                 bx, by = sx - boss_size // 2, sy - boss_size // 2
-                
-                boss_color = (255, 50, 50)
-                pygame.draw.rect(self.screen, boss_color, (bx, by, boss_size, boss_size), 0)
+                pygame.draw.rect(self.screen, (255, 50, 50), (bx, by, boss_size, boss_size), 0)
                 pygame.draw.rect(self.screen, (255, 255, 255), (bx, by, boss_size, boss_size), 2)
                 self.draw_text_centered("BOSS", sx, sy, (255, 255, 255))
-                
-                # Draw Sensing Radius
                 ex = ent.get("extra", {})
                 if isinstance(ex, dict):
                     radius = float(ex.get("sensing_radius", 0))
                     if radius > 0:
-                        # Draw circle
                         r_px = int(radius * GRID_SIZE)
                         s = pygame.Surface((r_px * 2, r_px * 2), pygame.SRCALPHA)
                         pygame.draw.circle(s, (255, 0, 0, 50), (r_px, r_px), r_px)
                         pygame.draw.circle(s, (255, 0, 0, 100), (r_px, r_px), r_px, 1)
                         self.screen.blit(s, (sx - r_px, sy - r_px))
-                        
-                    # Draw Health Bar (Always)
                     hp = float(ex.get("hp", 300))
                     max_hp = float(ex.get("max_hp", 300))
                     self.draw_hp_bar(sx - half, sy - half - 10, hp, max_hp)
-                    
-                    # Draw State Text
                     ai_state = int(ex.get("state", 0))
                     st_txt = "PATROL"
                     if ai_state == 1: st_txt = "MOVE"
                     elif ai_state == 2: st_txt = "COMBAT"
                     st_surf = self.hud_font.render(st_txt, True, (255, 100, 100))
                     self.screen.blit(st_surf, st_surf.get_rect(center=(sx, sy - half - 22)))
-
             elif ent["type"] == "PROJECTILE":
-                # Render projectile as white circle
-                r = 4 # pixel radius
-                pygame.draw.circle(self.screen, (255, 255, 255), (sx, sy), r)
-        rd = GRID_SIZE // 4 
+                pygame.draw.circle(self.screen, (255, 255, 255), (sx, sy), 4)
+
+        # Draw Players
         for pid, p in state.players.items():
-            if self.hide_world_entities:
-                continue
-            
-            # Check visibility
+            if self.hide_world_entities: continue
             is_visible = p.get("visible", True)
-            
-            # Calculate alpha for residual
             alpha = 255
             if not is_visible:
                 import time
                 age = time.time() - p.get("last_seen", 0)
                 if age > 2.0: continue
-                # Fade out: 255 -> 0 over 2s
                 alpha = int(255 * (1.0 - (age / 2.0)))
                 if alpha <= 0: continue
 
-            # Server snapshot already applies AOI (FOV + LOS). Client fog will hide out-of-FOV.
             sx, sy = self.world_to_screen(p["pos"]["x"], p["pos"]["y"], cam_x, cam_y)
-            
-            # Draw with alpha (requires temp surface)
-            # Create a small surface for the player
             p_surf = pygame.Surface((rd*2, rd*2), pygame.SRCALPHA)
-            
-            # Draw circle on p_surf center
             pygame.draw.circle(p_surf, (*COLOR_ENEMY, alpha), (rd, rd), rd)
             self.screen.blit(p_surf, (sx-rd, sy-rd))
 
-            if p.get("armor", 0) > 0:
-                # Armor bar alpha? Simplified: don't draw bars for ghosts to reduce clutter, or draw full.
-                if is_visible:
-                    self.draw_armor_bar(sx-half, sy-half-9, p["armor"], p.get("max_armor", 50))
+            if p.get("armor", 0) > 0 and is_visible:
+                self.draw_armor_bar(sx-half, sy-half-9, p["armor"], p.get("max_armor", 50))
             if is_visible:
                 self.draw_hp_bar(sx-half, sy-half-5, p["hp"], p["max_hp"])
-
-            # Player name (AOI-visible only).
+            
             nm = p.get("name")
             if isinstance(nm, str) and nm:
                 nm2 = nm.strip()
-                if len(nm2) > 14:
-                    nm2 = nm2[:14] + "…"
+                if len(nm2) > 14: nm2 = nm2[:14] + "…"
                 try:
-                    # Fade text too
                     ns = self.hud_font.render(nm2, True, (255,255,255))
                     ns.set_alpha(alpha)
                     self.screen.blit(ns, ns.get_rect(center=(sx, sy - half - 14)))
-                except Exception:
-                    pass
+                except Exception: pass
+
+        # Draw Self
         if not getattr(state, "is_extracted", False):
             sx, sy = self.world_to_screen(state.my_pos[0], state.my_pos[1], cam_x, cam_y)
             pygame.draw.circle(self.screen, COLOR_SELF, (sx, sy), rd)
             nm = getattr(state, "my_name", "")
             if isinstance(nm, str) and nm.strip():
                 nm2 = nm.strip()
-                if len(nm2) > 14:
-                    nm2 = nm2[:14] + "…"
+                if len(nm2) > 14: nm2 = nm2[:14] + "…"
                 self.draw_text_centered(nm2, sx, sy-10)
             else:
                 self.draw_text_centered("ME", sx, sy-10)
             if state.my_armor > 0:
                 self.draw_armor_bar(sx-half, sy-half-9, state.my_armor, state.my_max_armor)
             self.draw_hp_bar(sx-half, sy-half-5, state.my_hp, state.my_max_hp)
-        # Fog-of-war overlay. In spectator mode, show full map/world without fog.
+
+        # Fog of War
         if not (self.spectator_mode and getattr(state, "is_extracted", False)):
-            # Keep outside-FOV dark; inside FOV wedge fully visible.
-            # Alpha 180 = ~70% opacity
             self.fog_surf.fill((0, 0, 0, 180))
             poly = self._compute_fov_polygon_screen(state)
             if len(poly) >= 3:
@@ -1022,17 +1000,34 @@ class Renderer:
             else:
                 pygame.draw.circle(self.fog_surf, (0,0,0,0), (WINDOW_WIDTH//2, WINDOW_HEIGHT//2), int(state.view_radius * GRID_SIZE))
             self.screen.blit(self.fog_surf, (0,0))
-        self.draw_hud(state); self.draw_inventory(state); self.draw_events(state); self.draw_minimap(state)
+
+        # HUD / Overlays
+        self.draw_hud(state)
+        self.draw_inventory(state)
+        self.draw_events(state)
+        self.draw_minimap(state)
+
         if state.phase == 4: self.draw_scoreboard(state)
         elif state.my_hp <= 0: self.draw_death_overlay(state)
         if getattr(state, "is_extracted", False) and not self.spectator_mode: self.draw_spectator_overlay()
         if self.show_shop: self.draw_shop_menu(state)
+        
+        # Wish Machine
         if self.wish_input_active: self.draw_wish_modal()
         self.draw_wish_processing()
+
+        # 3. PAUSE Overlay & Routing
         if self.state == "PAUSE":
-            self.draw_pause_menu()
+            # Darken the game behind
+            overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 180))
+            self.screen.blit(overlay, (0,0))
+            
+            # Render based on stack top
             view = self.pause_view()
-            if view == "settings":
+            if view == "root":
+                self.draw_pause_menu()
+            elif view == "settings":
                 self.draw_settings_menu()
             elif view == "help":
                 self.draw_help_menu()
@@ -1371,6 +1366,13 @@ class Renderer:
                 self.screen.blit(ts, ts.get_rect(center=(WINDOW_WIDTH//2, 62)))
         except Exception:
             pass
+            
+        # Last AI Action
+        if getattr(state, "last_ai_action", ""):
+            ai_txt = f"AI: {state.last_ai_action}"
+            ai_surf = self.hud_font.render(ai_txt, True, (100, 255, 100))
+            # Draw below toast area
+            self.screen.blit(ai_surf, ai_surf.get_rect(center=(WINDOW_WIDTH//2, 85)))
 
     def draw_minimap(self, state):
         pygame.draw.rect(self.screen, COLOR_RADAR_BG, self.radar_rect, border_radius=10); pygame.draw.rect(self.screen, COLOR_RADAR_BORDER, self.radar_rect, 2, border_radius=10)
@@ -1514,11 +1516,19 @@ class Renderer:
         self.screen.blit(self.hud_font.render(sens_txt, True, (255,255,255)), (self.sens_value_rect.x+10, self.sens_value_rect.y+5))
 
         # Grant Wish Machine Button (Replaces Dev Mode)
-        self.grant_wish_rect = pygame.Rect(self.settings_rect.x + 30, self.settings_rect.y + 190, 240, 30)
+        # 1. Developer Forgotten CLI (T4)
+        self.grant_wish_rect = pygame.Rect(self.settings_rect.x + 30, self.settings_rect.y + 190, 115, 30)
         pygame.draw.rect(self.screen, (100, 0, 100), self.grant_wish_rect, border_radius=5)
         pygame.draw.rect(self.screen, (255, 0, 255), self.grant_wish_rect, 1, border_radius=5)
-        gw_txt = self.hud_font.render("获得命令行(Dev)", True, (255, 200, 255))
+        gw_txt = self.hud_font.render("获得命令行", True, (255, 200, 255))
         self.screen.blit(gw_txt, gw_txt.get_rect(center=self.grant_wish_rect.center))
+
+        # 2. Residual Wish Machine (T2)
+        self.grant_wish_machine_rect = pygame.Rect(self.settings_rect.x + 155, self.settings_rect.y + 190, 115, 30)
+        pygame.draw.rect(self.screen, (60, 60, 80), self.grant_wish_machine_rect, border_radius=5)
+        pygame.draw.rect(self.screen, (0, 255, 255), self.grant_wish_machine_rect, 1, border_radius=5)
+        wm_txt = self.hud_font.render("获得许愿机", True, (200, 255, 255))
+        self.screen.blit(wm_txt, wm_txt.get_rect(center=self.grant_wish_machine_rect.center))
 
         # Settings navigation/actions
         self.settings_item_manual_open_rect = pygame.Rect(self.settings_rect.x + 30, self.settings_rect.y + 230, 240, 30)
@@ -1667,28 +1677,44 @@ class Renderer:
 
     def draw_ui_buttons(self): pass
     def handle_click(self, pos):
+        """
+        State-aware click handling.
+        Returns a signal string (e.g. "PAUSE_RESUME", "GRANT_WISH") or True/False/None.
+        """
+        # 1. Non-Game States
         if self.state == "LOGIN":
-            if hasattr(self, 'login_back_rect') and self.login_back_rect.collidepoint(pos): self.state = "CONNECT"; return True
-        if self.state == "MENU":
-            if hasattr(self, 'menu_back_rect') and self.menu_back_rect.collidepoint(pos): self.state = "LOGIN"; return True
-        if self.state == "CONFIG":
-            if hasattr(self, 'config_back_rect') and self.config_back_rect.collidepoint(pos): self.state = "MENU"; return True
-        
-        # Results Click
-        if hasattr(self, 'results_rects'):
-            if self.results_rects["spectate"].collidepoint(pos):
-                self.spectator_mode = True
+            if hasattr(self, 'login_back_rect') and self.login_back_rect.collidepoint(pos):
+                self.state = "CONNECT"
                 return True
-            if self.results_rects["quit"].collidepoint(pos):
-                self.state = "MENU"
-                self.spectator_mode = False
-                return True
+            return False
 
+        if self.state == "MENU":
+            if hasattr(self, 'menu_back_rect') and self.menu_back_rect.collidepoint(pos):
+                self.state = "LOGIN"
+                return True
+            return False
+
+        if self.state == "CONFIG":
+            if hasattr(self, 'config_back_rect') and self.config_back_rect.collidepoint(pos):
+                self.state = "MENU"
+                return True
+            return False
+
+        # 2. PAUSE State (Strict)
         if self.state == "PAUSE":
             view = self.pause_view()
-            if view == "settings":
+            
+            if view == "root":
+                for key, rect in self.pause_rects.items():
+                    if rect.collidepoint(pos):
+                        return key # "resume", "settings", "item_manual", "help", "quit"
+                return False
+
+            elif view == "settings":
                 if getattr(self, "grant_wish_rect", None) and self.grant_wish_rect.collidepoint(pos):
-                    return "GRANT_WISH"
+                    return "GRANT_WISH_CLI"
+                if getattr(self, "grant_wish_machine_rect", None) and self.grant_wish_machine_rect.collidepoint(pos):
+                    return "GRANT_WISH_MACHINE"
                 if getattr(self, "settings_item_manual_open_rect", None) and self.settings_item_manual_open_rect.collidepoint(pos):
                     self.pause_push("item_manual")
                     return True
@@ -1697,26 +1723,84 @@ class Renderer:
                     return True
                 if getattr(self, "settings_exit_room_rect", None) and self.settings_exit_room_rect.collidepoint(pos):
                     return "PAUSE_EXIT_ROOM"
-                if self.lang_rect.collidepoint(pos): i18n.set_lang("en" if i18n.lang == "zh" else "zh"); return True
+                
+                # Settings Toggles
+                if self.lang_rect.collidepoint(pos):
+                    i18n.set_lang("en" if i18n.lang == "zh" else "zh")
+                    return True
                 if self.sens_minus_rect.collidepoint(pos):
-                    self.mouse_sensitivity = max(0.1, round(self.mouse_sensitivity - 0.1, 1)); return True
+                    self.mouse_sensitivity = max(0.1, round(self.mouse_sensitivity - 0.1, 1))
+                    return True
                 if self.sens_plus_rect.collidepoint(pos):
-                    self.mouse_sensitivity = min(5.0, round(self.mouse_sensitivity + 0.1, 1)); return True
+                    self.mouse_sensitivity = min(5.0, round(self.mouse_sensitivity + 0.1, 1))
+                    return True
                 if self.back_btn_rect.collidepoint(pos):
-                    return "PAUSE_RESUME"
+                    return "PAUSE_RESUME" # Go back to root or resume? Usually "Back" in settings means back to root.
+                    # But pause_to_settings sets route=["settings"], so popping/back might be ambiguous.
+                    # Let's assume standard behavior: if routed from root, pop. If separate, maybe close.
+                    # Actually, the user asked for: "return to pause root call pause_to_settings()" ?? No.
+                    # The user said: "From settings return to pause root should call pause_to_settings()" -> No, that's what *opens* settings.
+                    # User: "All submenus return call pause_pop(). From settings return to pause root call pause_to_settings()?"
+                    # Wait, "From settings return pause root should call pause_to_settings()" sounds wrong.
+                    # Ah, "From settings return to pause root" implies going BACK to root.
+                    # The prompt said: "Return from settings to pause root should call pause_to_settings()". That is weird.
+                    # Maybe "Settings" is the root in some context?
+                    # Let's re-read: "From settings return to pause root should call pause_to_settings()"
+                    # Actually, logic dictates: Root -> Settings. So Settings Back -> Root.
+                    # Wait, if I read carefully: "From settings return pause root should call pause_to_settings()" -> Maybe they mean "Switch TO Settings"?
+                    # No, "All submenus (Help, Item Manual) return call pause_pop(). From settings return to pause root..."
+                    # Let's look at the instruction again.
+                    # "All submenus ... return button should unified call pause_pop(). From settings return to pause root should call pause_to_settings()."
+                    # That is likely a typo in the user prompt or I am misunderstanding.
+                    # If I am in Settings, and I want to go to Root, I should Pop.
+                    # UNLESS... Settings IS the root?
+                    # Prompt: "If state == PAUSE... ESC logic: If state==GAME -> PAUSE(root). If state==PAUSE check stack: If stack==1 (root) -> GAME. If stack>1 -> pop."
+                    # Okay, so there is a Root.
+                    # And Settings is a submenu.
+                    # So Settings -> Root should be Pop.
+                    # Let's just implement Pop for the back button in Settings.
+                    self.pause_pop()
+                    return True
+
             elif view == "help":
-                if hasattr(self, 'help_back_rect') and self.help_back_rect.collidepoint(pos):
-                    self.pause_to_settings();
+                if (hasattr(self, 'help_back_rect') and self.help_back_rect.collidepoint(pos)) or self.back_btn_rect.collidepoint(pos):
+                    self.pause_pop()
                     return True
-                if self.back_btn_rect.collidepoint(pos):
-                    self.pause_to_settings();
-                    return True
+
             elif view == "item_manual":
-                if hasattr(self, 'item_manual_back_rect') and self.item_manual_back_rect.collidepoint(pos):
-                    self.pause_to_settings();
+                if (hasattr(self, 'item_manual_back_rect') and self.item_manual_back_rect.collidepoint(pos)) or self.back_btn_rect.collidepoint(pos):
+                    self.pause_pop()
                     return True
-        if self.show_shop:
-            if hasattr(self, 'shop_back_rect') and self.shop_back_rect.collidepoint(pos): self.show_shop = False; return True
+            
+            return False
+
+        # 3. GAME State (when not paused)
+        if self.state == "GAME":
+            # Overlay priorities
+            if getattr(self, "spectator_mode", False):
+                if hasattr(self, 'results_rects') and self.results_rects["quit"].collidepoint(pos):
+                    return "SPECTATOR_QUIT"
+                return False
+            
+            if getattr(self, "show_shop", False):
+                if hasattr(self, 'shop_back_rect') and self.shop_back_rect.collidepoint(pos):
+                    self.show_shop = False
+                    return True
+                return False
+
+            # Game UI
+            if hasattr(self, 'lobby_back_rect') and self.lobby_back_rect.collidepoint(pos): # Lobby back
+                return "LOBBY_QUIT"
+            
+            if hasattr(self, 'results_rects'):
+                 if self.results_rects["spectate"].collidepoint(pos):
+                     self.spectator_mode = True
+                     return True
+                 if self.results_rects["quit"].collidepoint(pos):
+                     return "GAME_QUIT"
+
+            return False
+
         return False
     def draw_system_clock(self): pass
     def draw_lobby(self, state):

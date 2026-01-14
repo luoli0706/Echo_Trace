@@ -72,6 +72,7 @@ func LoadDefaultGameConfig(rootDir string) (GameConfig, error) {
 		"tactics.json",
 		"combat.json",
 		"phases.json",
+		"ai.json",
 	}
 
 	merged := base

@@ -1,0 +1,23 @@
+{
+  "ai": {
+    "ning_bye": {
+      "hp": 2000.0,
+      "armor": 50.0,
+      "move_speed": 5.0,
+      "damage": 50.0,
+      "armor_penetration": 0.5,
+      "reload_time_sec": 1.5,
+      "sensing_radius_ratio": 1.5,
+      "pulse_interval_sec": 5.0,
+      "legendary_drop_chance": 0.2,
+      "lost_target_timeout_sec": 3.0,
+      "threat_scan_distance": 3.0,
+      "projectile_speed": 12.0,
+      "projectile_radius": 0.4,
+      "projectile_lifetime_sec": 5.0,
+      "projectile_spawn_offset": 0.8,
+      "arrival_distance": 0.5,
+      "pathfinding_max_steps": 500
+    }
+  }
+}

@@ -22,29 +22,41 @@ GAME_BACKEND_URL = "http://localhost:8080"
 ITEM_MAPPING = """
 Available Items (Name -> ID):
 [攻击类 / Offense]
-- 超级穿甲弹 (AP Ammo) -> WPN_AP_AMMO
-- 光学折射效应 (Reflect/Bounce Ammo) -> WPN_BOUNCE_AMMO
-- 超视距·电磁炮 (Railgun) -> WPN_RAILGUN
-- 超视距·精通天理 (Heaven Ray) -> WPN_HEAVEN_RAY
+- 超级穿甲弹 (AP Ammo) [T1] -> WPN_AP_AMMO
+- 光学折射效应 (Reflect/Bounce Ammo) [T2] -> WPN_BOUNCE_AMMO
+- 超视距·电磁炮 (Railgun) [T3] -> WPN_RAILGUN
+- 超视距·精通天理 (Heaven Ray) [T4] -> WPN_HEAVEN_RAY
 
 [生存类 / Survival]
-- 回光返照 (Repair Kit) -> SURV_REPAIR
-- 绝对防御 (Phase Shift/Invincible) -> SURV_PHASE_SHIFT
-- 主动防御 (Purge System) -> SURV_PURGE
-- 我就是柠白号 (NingBye Mode) -> SURV_NINGBYE_MODE
+- 回光返照 (Repair Kit) [T1] -> SURV_REPAIR
+- 绝对防御 (Phase Shift/Invincible) [T2] -> SURV_PHASE_SHIFT
+- 主动防御 (Purge System) [T3] -> SURV_PURGE
+- 我就是柠白号 (NingBye Mode) [T4] -> SURV_NINGBYE_MODE
 
 [侦察类 / Recon]
-- 视距提升 (Scope) -> RECON_SCOPE
-- 光锥之外 (Rear Sensor) -> RECON_SENSOR
-- 全境扫描终端 (Global Scan) -> RECON_SCANNER
-- 全频段阻塞干扰 (Global Jammer) -> RECON_JAMMER
+- 视距提升 (Scope) [T1] -> RECON_SCOPE
+- 光锥之外 (Rear Sensor) [T2] -> RECON_SENSOR
+- 全境扫描终端 (Global Scan) [T3] -> RECON_SCANNER
+- 全频段阻塞干扰 (Global Jammer) [T4] -> RECON_JAMMER
 
 [综合类 / Utility]
-- 闪灵瞬步 (Blink) -> UTIL_BLINK
-- 超视距·追踪 (Radar) -> UTIL_RADAR
-- 无形之物 (Stealth) -> UTIL_STEALTH
-- 残缺的万能许愿机 (Broken Wish Machine) -> UTIL_WISH_MACHINE
-- 开发者遗忘的命令行 (Developer Forgotten CLI) -> UTIL_DEV_FORGOTTEN_CLI
+- 闪灵瞬步 (Blink) [T1] -> UTIL_BLINK
+- 超视距·追踪 (Radar) [T2] -> UTIL_RADAR
+- 残缺的万能许愿机 (Broken Wish Machine) [T2] -> UTIL_WISH_MACHINE
+- 无形之物 (Stealth) [T3] -> UTIL_STEALTH
+- 万能许愿机 (Universal Wish Machine) [T4] -> UTIL_WISH_MACHINE_FULL (Not implemented separately, logic handled by CLI)
+- 开发者遗忘的命令行 (Developer Forgotten CLI) [T4] -> UTIL_DEV_FORGOTTEN_CLI
+"""
+
+MAP_CONTEXT = """
+Game Map Information:
+- Size: 48x48 grid.
+- Coordinates: (0,0) is Top-Left, (47,47) is Bottom-Right.
+- Center is approximately (24,24).
+- Obstacles: Procedurally generated maze (density ~0.2).
+- Key Locations:
+  - Motors (Phase 2) are scattered.
+  - Exits (Phase 3) usually appear at edges.
 """
 
 # --- Tools Definition ---
@@ -62,6 +74,10 @@ def _call_backend(endpoint: str, data: dict) -> str:
 def modify_player_health(session_id: str, hp: float) -> str:
     """Modify player's health (0-500)."""
     return _call_backend("/admin/player/health", {"session_id": session_id, "hp": hp})
+
+def modify_global_health(hp: float) -> str:
+    """Set the health of ALL players in the game to a specific value."""
+    return _call_backend("/admin/player/health/global", {"hp": hp})
 
 def modify_player_armor(session_id: str, armor: float) -> str:
     """Modify player's armor (0-250)."""
@@ -109,7 +125,8 @@ def sanitize_plain_text(text: str) -> str:
     text = text.replace("*", "")
     text = text.replace("_", "")
     text = re.sub(r"^#{1,6}\\s+", "", text, flags=re.MULTILINE)
-    text = re.sub(r"\\[([^\\]]+)\\]\\([^\\)]+\\)", r"\\1", text)
+    # Correctly remove markdown links [Text](URL) -> Text
+    text = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text)
     return text.strip()
 
 # --- FastAPI App ---
@@ -135,6 +152,20 @@ TOOLS_SCHEMA = [
                     "hp": {"type": "number", "description": "Target HP value (0-500)"}
                 },
                 "required": ["session_id", "hp"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "modify_global_health",
+            "description": "[T4 Exclusive] Set the HP of ALL players in the game.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "hp": {"type": "number", "description": "Target HP value (0-500)"}
+                },
+                "required": ["hp"]
             }
         }
     },
@@ -237,7 +268,7 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "move_player_to_coordinate",
-            "description": "Move a player to a target coordinate. Use when user asks to relocate someone to X,Y.",
+            "description": "[T4 Exclusive] Move a player to a target coordinate. Use when user asks to relocate someone to X,Y.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -253,6 +284,7 @@ TOOLS_SCHEMA = [
 
 TOOL_MAP = {
     "modify_player_health": modify_player_health,
+    "modify_global_health": modify_global_health,
     "modify_player_armor": modify_player_armor,
     "modify_inventory_capacity": modify_inventory_capacity,
     "add_items_to_inventory": add_items_to_inventory,
@@ -270,33 +302,66 @@ def process_wish(req: WishRequest):
 
     item_id = (req.item_id or "UTIL_WISH_MACHINE").strip()
 
+    # Determine Device Tier and Permissions
+    is_t4 = (item_id == "UTIL_DEV_FORGOTTEN_CLI")
+    device_name = "Developer CLI (Tier 4)" if is_t4 else "Residual Wish Machine (Tier 2)"
+    
+    # Filter Tools based on Tier
+    allowed_tools = []
+    for t in TOOLS_SCHEMA:
+        name = t["function"]["name"]
+        
+        # T4 Exclusive Tools
+        if name in ("move_player_to_coordinate", "modify_global_health", "command_ai_patrol", "set_player_threat"):
+            if not is_t4:
+                continue # Skip for T2
+        
+        allowed_tools.append(t)
+
+    # Context Prompt
+    permission_context = ""
+    if is_t4:
+        permission_context = """
+        TIER 4 ACCESS GRANTED:
+        - You have FULL ACCESS to all tools.
+        - You can move players, command AI, set global stats, and spawn ANY item (Tier 1-4).
+        """
+    else:
+        permission_context = """
+        TIER 2 ACCESS (RESTRICTED):
+        - You can ONLY modify self stats (HP, Armor, Speed) and spawn items up to Tier 3.
+        - You CANNOT move players, command AI, or spawn Tier 4 items.
+        - If the user asks for restricted actions, politely deny them citing 'Insufficient Permissions (Tier 2 Device)'.
+        """
+
     # 1. Call LLM
     messages = [
         {"role": "system", "content": f"""You are a Game Master for Echo Trace. Interpret the user's wish and call the appropriate tools to fulfill it.
 
 CRITICAL RULES:
-- Do NOT ask the player for confirmation. Infer intent and act.
-- Do NOT ask for session_id; it is provided.
-- If it is impossible to execute, respond with a short plain-text reason and ask the player to re-enter the wish.
+- Device Used: {device_name}.
+- Wishing Player Session ID: '{req.session_id}'.
+- Do NOT ask confirmation. Act or Deny.
+- If impossible/denied, reply with short plain-text reason.
+- **IMPORTANT**: At the very end of your text response, provide a very concise summary (max 10 words) of what you actually did, prefixed with '[[SUMMARY]]'.
+  - Example: "Teleporting you. [[SUMMARY]]Teleported to (24,24)"
+  - Example: "Granting items. [[SUMMARY]]Added Railgun & Ammo"
 
-CONTEXT:
-- Wishing player's session_id is '{req.session_id}'.
-- Wish device item_id is '{item_id}'.
+{permission_context}
 
-If the user asks for items, use 'add_items_to_inventory' with the IDs from the list below.
+{MAP_CONTEXT}
 
+ITEM LIST (Use 'add_items_to_inventory' with IDs):
 {ITEM_MAPPING}
 
-If the user's request requires multiple actions (e.g. "expand inventory AND give item"), you MUST generate multiple tool calls in the same response.
-
-If the wish is ambiguous, make a best-effort guess. Be generous but within limits."""},
+If valid, execute. If ambiguous, guess."""},
         {"role": "user", "content": f"I wish for: {req.wish}"}
     ]
 
     payload = {
-        "model": "deepseek-chat", # or whichever model is available
+        "model": "deepseek-chat", 
         "messages": messages,
-        "tools": TOOLS_SCHEMA
+        "tools": allowed_tools
     }
 
     def call_llm(msgs: list[dict]):
@@ -341,7 +406,7 @@ If the wish is ambiguous, make a best-effort guess. Be generous but within limit
             tool_calls = []
 
     if not tool_calls:
-        return {"status": "needs_retry", "results": [], "玩家可见回应": sanitize_plain_text("我无法执行这个愿望（缺少可用指令或信息不足）。请换一种说法重新输入。")}
+        return {"status": "needs_retry", "results": [], "玩家可见回应": sanitize_plain_text(message.get("content", "指令无法执行（权限不足或意图不明）。"))}
 
     for tc in tool_calls:
         func_name = tc["function"]["name"]
@@ -350,11 +415,13 @@ If the wish is ambiguous, make a best-effort guess. Be generous but within limit
         try:
             args = json.loads(args_str)
             if func_name in TOOL_MAP:
-                # Inject session_id if missing (though Prompt usually adds it)
-                if "session_id" not in args:
-                    args["session_id"] = req.session_id
+                if "session_id" not in args and "session_id" in tc["function"]["arguments"]: 
+                     pass
                 
-                # Execute Tool
+                if not is_t4 and func_name in ("move_player_to_coordinate", "modify_global_health"):
+                     results.append(f"{func_name}: DENIED (Tier 2 Restriction)")
+                     continue
+
                 res = TOOL_MAP[func_name](**args)
                 print(f"[MCP DEBUG] Tool Result: {res}")
                 results.append(f"{func_name}: {res}")
@@ -366,10 +433,44 @@ If the wish is ambiguous, make a best-effort guess. Be generous but within limit
 
     ok_count = sum(1 for r in results if isinstance(r, str) and "Success:" in r)
     reply = f"已执行 {len(results)} 个指令（成功 {ok_count} 个）。"
-    if ok_count == 0:
-        reply = "指令已尝试执行，但未成功生效。你可以换一种说法重新输入愿望。"
+    if ok_count == 0 and len(results) > 0:
+        reply = "指令执行失败或被拒绝。"
+    
+    # Process LLM Text for Summary
+    llm_text = message.get("content", "")
+    action_summary = ""
+    
+    if llm_text:
+        # Check for [[SUMMARY]] token
+        match = re.search(r"\[\[SUMMARY\]\](.*)", llm_text, re.DOTALL)
+        if match:
+            action_summary = match.group(1).strip()
+            # Remove summary from visible reply
+            llm_text = llm_text.replace(match.group(0), "").strip()
+        
+        reply = f"{sanitize_plain_text(llm_text)}"
 
-    return {"status": "success", "results": results, "玩家可见回应": sanitize_plain_text(reply)}
+    # Fallback if LLM didn't provide summary, use heuristic
+    if not action_summary:
+        summary_parts = []
+        for tc in tool_calls:
+            fn = tc["function"]["name"]
+            if fn == "add_items_to_inventory": summary_parts.append("物资配发")
+            elif fn == "modify_player_health": summary_parts.append("生命调整")
+            elif fn == "move_player_to_coordinate": summary_parts.append("传送")
+            elif fn == "command_ai_patrol": summary_parts.append("AI部署")
+            elif fn == "set_player_threat": summary_parts.append("威胁更新")
+            elif fn == "modify_global_health": summary_parts.append("世界重塑")
+        if summary_parts:
+            action_summary = " & ".join(summary_parts)
+        else:
+            action_summary = "System Action"
+
+    # Prefix with Tier info
+    tier_prefix = "[T4]" if is_t4 else "[T2]"
+    action_summary = f"{tier_prefix} {action_summary}"
+
+    return {"status": "success", "results": results, "玩家可见回应": reply, "action_summary": action_summary}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=9091)

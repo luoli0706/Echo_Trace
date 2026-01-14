@@ -1,7 +1,9 @@
 package logic
 
 import (
+	"fmt"
 	"log"
+	"math"
 	"time"
 )
 
@@ -157,27 +159,86 @@ func (gs *GameState) AdminModifySpeed(sessionID string, multiplier float64, dura
 
 // AdminMovePlayer moves a player to an exact coordinate if it's walkable.
 // This is intended for MCP / admin commands.
-func (gs *GameState) AdminMovePlayer(sessionID string, x float64, y float64) bool {
+// Returns: found (bool), result_msg (string)
+func (gs *GameState) AdminMovePlayer(sessionID string, x float64, y float64) (bool, string) {
 	gs.Mutex.Lock()
 	defer gs.Mutex.Unlock()
 
 	p, ok := gs.Players[sessionID]
 	if !ok {
-		return false
+		return false, "Player not found"
 	}
 	if !p.IsAlive {
 		p.ClientMsg = "Cannot move while dead."
-		return true
+		return true, "Player is dead"
 	}
 
-	dest := Vector2{X: x, Y: y}
-	// Same collision radius used by Blink.
-	if gs.checkCollision(dest, 0.25) {
-		p.ClientMsg = "Move blocked (invalid target)."
-		return true
+	target := Vector2{X: x, Y: y}
+	
+	// If target is valid immediately, move.
+	if !gs.checkCollision(target, 0.25) {
+		p.Pos = target
+		log.Printf("[ADMIN] Moved %s to (%.1f, %.1f)", sessionID, x, y)
+		return true, "OK"
 	}
 
-	p.Pos = dest
+	// Spiral Search for nearest valid point
+	log.Printf("[ADMIN] Target (%.1f, %.1f) blocked. Searching nearby...", x, y)
+	
+	// Search radius up to 5.0 units
+	maxRadius := 5.0
+	step := 0.5
+	
+	// Spiral Logic: increasing radius, check points around circumference
+	for r := step; r <= maxRadius; r += step {
+		// Circumference check steps based on radius to maintain density
+		circumference := 2 * math.Pi * r
+		numPoints := int(circumference / step) 
+		if numPoints < 8 { numPoints = 8 }
+		
+		angleStep := 2 * math.Pi / float64(numPoints)
+		
+		for i := 0; i < numPoints; i++ {
+			angle := float64(i) * angleStep
+			checkPos := Vector2{
+				X: target.X + math.Cos(angle)*r,
+				Y: target.Y + math.Sin(angle)*r,
+			}
+			
+			if !gs.checkCollision(checkPos, 0.25) {
+				p.Pos = checkPos
+				msg := fmt.Sprintf("Target blocked. Moved to nearby (%.1f, %.1f)", checkPos.X, checkPos.Y)
+				p.ClientMsg = msg
+				log.Printf("[ADMIN] %s", msg)
+				return true, msg
+			}
+		}
+	}
+
+	p.ClientMsg = "Move blocked (No valid spot found nearby)."
+	return true, "Move blocked (Collision/Out of Bounds and no nearby spot found)"
+}
+
+// AdminModifyGlobalHealth sets the HP for ALL players.
+func (gs *GameState) AdminModifyGlobalHealth(hp float64) bool {
+	gs.Mutex.Lock()
+	defer gs.Mutex.Unlock()
+
+	if hp < 0 { hp = 0 }
+	// No upper limit enforced here (God Mode)
+
+	count := 0
+	for _, p := range gs.Players {
+		if p.IsAlive {
+			p.HP = hp
+			// Also update MaxHP if needed? 
+			// User request is "Control HP", usually implies setting current HP.
+			// If new HP > MaxHP, let it be (Overheal).
+			count++
+		}
+	}
+	
+	log.Printf("[ADMIN] Set Global Health to %.2f for %d players", hp, count)
 	return true
 }
 

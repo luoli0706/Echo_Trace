@@ -1,11 +1,27 @@
 {
   "combat": {
-    "_comment": "战斗系统相关参数。",
     "base_attack_damage": 25.0,
     "_comment_base_attack_damage": "基础攻击伤害。允许范围: 1.0-200.0（超限会被服务端强制截断）。",
+    "bullet_damage": 20.0,
+    "_comment_bullet_damage": "空格键射击造成的子弹伤害。默认20。允许范围: 1.0-200.0。",
+    "base_armor": 50.0,
+    "_comment_base_armor": "玩家初始护甲值。默认50。允许范围: 0.0-500.0。",
+    "projectile_lifetime_sec": 5.0,
+    "_comment_projectile_lifetime_sec": "子弹存活时间（秒）。默认5.0。允许范围: 1.0-30.0。",
+    "default_bounces": 0,
+    "_comment_default_bounces": "子弹默认反弹次数。0=撞墙销毁。允许范围: 0-100。",
+    "reload_time_sec": 0.5,
+    "_comment_reload_time_sec": "射击冷却时间（秒）。默认0.5（即2发/秒）。允许范围: 0.05-5.0。",
     "advanced_recon_duration_sec": 30.0,
     "_comment_advanced_recon_duration_sec": "高级侦察（标记）持续时间（秒）。允许范围: 1.0-120.0（超限会被服务端强制截断）。",
     "attack_requires_vision": true,
-    "_comment_attack_requires_vision": "攻击是否需要视野（true=必须看到目标才能攻击）。"
+    "_comment_attack_requires_vision": "攻击是否需要视野（true=必须看到目标才能攻击）。",
+    "projectile_speed": 15.0,
+    "projectile_radius": 0.3,
+    "ammo_ap_damage": 40.0,
+    "ammo_bounce_damage": 25.0,
+    "ammo_bounce_bonus": 100,
+    "railgun_damage": 75.0,
+    "railgun_trap_penetration": 0.2
   }
 }

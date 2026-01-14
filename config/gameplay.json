@@ -29,6 +29,17 @@
     "weight_threshold_view_reduce": 0.8,
     "_comment_weight_threshold_view_reduce": "负重超过此比例时，视野半径开始缩小。允许范围: 0.0-1.0（超限会被服务端强制截断）。【已接入】",
     "weight_threshold_immobilize": 1.0,
-    "_comment_weight_threshold_immobilize": "负重达到此比例时，无法进行交互（如破译）。允许范围: 0.0-1.0（超限会被服务端强制截断）。【已接入】"
+    "_comment_weight_threshold_immobilize": "负重达到此比例时，无法进行交互（如破译）。允许范围: 0.0-1.0（超限会被服务端强制截断）。【已接入】",
+    "respawn_time_sec": 5.0,
+    "respawn_far_distance": 15.0,
+    "item_durations": {
+      "phase_shift_sec": 3.0,
+      "purge_sec": 2.0,
+      "recon_scope_sec": 15.0,
+      "recon_sensor_sec": 10.0,
+      "recon_scanner_sec": 30.0,
+      "blink_distance": 2.0,
+      "stealth_sec": 15.0
+    }
   }
 }

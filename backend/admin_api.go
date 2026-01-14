@@ -65,6 +65,7 @@ type mcpWishResponse struct {
 	Status           string        `json:"status"`
 	Results          []interface{} `json:"results"`
 	PlayerVisibleMsg string        `json:"玩家可见回应"`
+	ActionSummary    string        `json:"action_summary"`
 }
 
 func setPlayerClientMsg(sessionID string, msg string) {
@@ -87,7 +88,64 @@ func setPlayerClientMsg(sessionID string, msg string) {
 	}
 }
 
+// Helper to set LastAIAction specifically
+func setPlayerLastAIAction(sessionID string, action string) {
+	if sessionID == "" {
+		return
+	}
+	roomIDs := network.GlobalManager.ListRooms()
+	for _, rid := range roomIDs {
+		room := network.GlobalManager.GetRoom(rid)
+		if room != nil && room.GameLoop != nil && room.GameLoop.GameState != nil {
+			gs := room.GameLoop.GameState
+			gs.Mutex.Lock()
+			if p, ok := gs.Players[sessionID]; ok {
+				p.LastAIAction = action
+				gs.Mutex.Unlock()
+				return
+			}
+			gs.Mutex.Unlock()
+		}
+	}
+}
+
 // ... (Legacy code, kept for reference but reusing logic)
+
+type ModifyGlobalHealthRequest struct {
+	AdminRequest
+	HP float64 `json:"hp"`
+}
+
+// ... (Existing types)
+
+func handleAdminModifyGlobalHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req ModifyGlobalHealthRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	found := false
+	roomIDs := network.GlobalManager.ListRooms()
+	for _, rid := range roomIDs {
+		room := network.GlobalManager.GetRoom(rid)
+		if room != nil && room.GameLoop != nil && room.GameLoop.GameState != nil {
+			if room.GameLoop.GameState.AdminModifyGlobalHealth(req.HP) {
+				found = true
+			}
+		}
+	}
+
+	if found {
+		w.Write([]byte("OK"))
+	} else {
+		http.Error(w, "No active game states", http.StatusNotFound)
+	}
+}
 
 func handleAdminModifyHealth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
@@ -314,11 +372,14 @@ func handleAdminMovePlayer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	found := false
+	resultMsg := ""
 	roomIDs := network.GlobalManager.ListRooms()
 	for _, rid := range roomIDs {
 		room := network.GlobalManager.GetRoom(rid)
 		if room != nil && room.GameLoop != nil && room.GameLoop.GameState != nil {
-			if room.GameLoop.GameState.AdminMovePlayer(req.SessionID, req.X, req.Y) {
+			var ok bool
+			ok, resultMsg = room.GameLoop.GameState.AdminMovePlayer(req.SessionID, req.X, req.Y)
+			if ok {
 				found = true
 				break
 			}
@@ -326,7 +387,16 @@ func handleAdminMovePlayer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if found {
-		w.Write([]byte("OK"))
+		if resultMsg == "OK" {
+			w.Write([]byte("OK"))
+		} else {
+			// Return 200 but with error message in body so MCP can see it,
+			// OR return 400/409. 
+			// MCP tool helper `_call_backend` checks for 200.
+			// If I return 400, MCP says "Failed".
+			// "Move blocked" is a failure condition.
+			http.Error(w, resultMsg, http.StatusConflict)
+		}
 	} else {
 		http.Error(w, "Player not found", http.StatusNotFound)
 	}
@@ -429,6 +499,13 @@ func handleWish(w http.ResponseWriter, r *http.Request) {
 			setPlayerClientMsg(sid, "Wish failed: invalid MCP response.")
 			return
 		}
+		
+		// Log Action Summary to Console
+		if parsed.ActionSummary != "" {
+			log.Printf("[MCP ACTION] Player %s: %s", sid, parsed.ActionSummary)
+			setPlayerLastAIAction(sid, parsed.ActionSummary)
+		}
+
 		msg := parsed.PlayerVisibleMsg
 		if msg == "" {
 			msg = "Wish processed."

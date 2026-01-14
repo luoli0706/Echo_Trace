@@ -598,9 +598,6 @@ def main():
                                 # Send Wish Async
                                 def send_wish(url, sid, w):
                                     try:
-                                        # Use http instead of ws, assuming same host/port logic or configured separately.
-                                        # Currently renderer.server_input is like "ws://host:port/ws"
-                                        # We need "http://host:port/api/wish"
                                         base = url.replace("ws://", "http://").replace("wss://", "https://").replace("/ws", "")
                                         api_url = f"{base}/api/wish"
                                         data = json.dumps({"session_id": sid, "wish": w}).encode('utf-8')
@@ -626,8 +623,10 @@ def main():
 
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
-                        # Lobby Back Button
-                        if state.phase == 0 and hasattr(renderer, 'lobby_back_rect') and renderer.lobby_back_rect.collidepoint(event.pos):
+                        # Use new state-aware handle_click
+                        res = renderer.handle_click(event.pos)
+                        
+                        if res == "LOBBY_QUIT" or res == "GAME_QUIT":
                             renderer.state = "MENU"
                             state = GameState() # Reset
                             if net and getattr(net, "connected", False):
@@ -636,24 +635,21 @@ def main():
                                 except Exception:
                                     pass
                             continue
-                            
-                        prev_state = renderer.state
-                        renderer.handle_click(event.pos)
-                        # If any UI action sends us back to MENU, also detach from room on server
-                        # but keep last_room_id so the player can re-join via "加入行动".
-                        if prev_state == "GAME" and renderer.state == "MENU":
+
+                        if res == "SPECTATOR_QUIT":
+                            renderer.state = "MENU"
+                            renderer.spectator_mode = False
                             state = GameState()
-                            if net and getattr(net, "connected", False):
-                                try:
-                                    net.send({"type": 1015, "payload": {}})
-                                except Exception:
-                                    pass
+                            if net:
+                                try: net.send({"type": 1015, "payload": {}})
+                                except: pass
+                            continue
 
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
-                        # ESC should always enter Settings menu directly.
+                        # ESC: Enter PAUSE with root menu
                         renderer.state = "PAUSE"
-                        renderer.pause_route = ["settings"]
+                        renderer.pause_route = ["root"]
                         continue
                     
                     # Gameplay Inputs
@@ -690,7 +686,7 @@ def main():
                             slot = event.key - pygame.K_1
                             mods = pygame.key.get_mods()
                             
-                            print(f"[DEBUG] Key {slot+1} pressed. Mods: {mods}. Inventory Len: {len(state.my_inventory)}")
+                            # print(f"[DEBUG] Key {slot+1} pressed. Mods: {mods}. Inventory Len: {len(state.my_inventory)}")
 
                             if state.phase == 0 and not state.tactic_chosen:
                                 if event.key <= pygame.K_3:
@@ -709,19 +705,15 @@ def main():
                                         if slot < len(state.my_inventory):
                                             item = state.my_inventory[slot]
                                             iid = item.get("id") or item.get("ID")
-                                            print(f"[DEBUG] Slot {slot} Item: {iid}")
                                             if iid in ("UTIL_WISH_MACHINE", "UTIL_DEV_FORGOTTEN_CLI"):
                                                 is_wish = True
-                                        else:
-                                            print(f"[DEBUG] Slot {slot} is empty.")
                                     except Exception as e:
                                         print(f"[DEBUG] Error checking item: {e}")
 
                                     if is_wish:
-                                        print("[DEBUG] Wish Machine Activated!")
                                         renderer.wish_input_active = True
                                         renderer.wish_input_text = ""
-                                        # Stop player movement to avoid sliding while typing
+                                        # Stop player movement
                                         input_dir[0] = 0
                                         input_dir[1] = 0
                                     else:
@@ -749,83 +741,62 @@ def main():
             if renderer.state == "PAUSE":
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
-                        # Settings is the pause root now.
-                        if renderer.pause_view() != "settings":
+                        if len(renderer.pause_route) > 1:
                             renderer.pause_pop()
                         else:
                             renderer.state = "GAME"
-
+                
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     # Mouse wheel (older pygame) for manual scrolling
                     if renderer.pause_view() == "item_manual" and event.button in (4, 5):
                         renderer.scroll_item_manual(-40 if event.button == 4 else 40)
                         continue
 
-                    if renderer.pause_view() != "root":
-                        # Detect Clicks in Sub-menus
-                        action_or_result = renderer.handle_click(event.pos)
+                    res = renderer.handle_click(event.pos)
+                    
+                    if res == "GRANT_WISH_CLI" or res == "GRANT_WISH_MACHINE":
+                        item_id = "UTIL_DEV_FORGOTTEN_CLI" if res == "GRANT_WISH_CLI" else "UTIL_WISH_MACHINE"
+                        print(f"[Client] Granting {item_id}...")
+                        def grant_dev_item(url, sid, iid):
+                            try:
+                                if not url or not sid: return
+                                base = url.replace("ws://", "http://").replace("wss://", "https://").replace("/ws", "")
+                                if not base.startswith("http"): base = "http://" + base
+                                    
+                                api_url = f"{base}/admin/player/inventory/item"
+                                data = json.dumps({"session_id": sid, "item_ids": [iid]}).encode('utf-8')
+                                req = urllib.request.Request(api_url, data=data, headers={'Content-Type': 'application/json'})
+                                with urllib.request.urlopen(req, timeout=3.0) as f:
+                                    print(f"[Client] Grant Response: {f.read().decode('utf-8')}")
+                            except Exception as e:
+                                print(f"[Client] Grant Failed: {e}")
                         
-                        if action_or_result == "GRANT_WISH":
-                            print(f"[Client] Granting Wish Machine...")
-                            def grant_dev_item(url, sid):
-                                try:
-                                    if not url or not sid: return
-                                    # Handle both ws:// and http:// cases
-                                    base = url.replace("ws://", "http://").replace("wss://", "https://").replace("/ws", "")
-                                    # Fallback if no schema
-                                    if not base.startswith("http"): base = "http://" + base
-                                        
-                                    api_url = f"{base}/admin/player/inventory/item"
-                                    # Must use item_ids list
-                                    data = json.dumps({"session_id": sid, "item_ids": ["UTIL_DEV_FORGOTTEN_CLI"]}).encode('utf-8')
-                                    req = urllib.request.Request(api_url, data=data, headers={'Content-Type': 'application/json'})
-                                    with urllib.request.urlopen(req, timeout=3.0) as f:
-                                        print(f"[Client] Grant Response: {f.read().decode('utf-8')}")
-                                except Exception as e:
-                                    print(f"[Client] Grant Failed: {e}")
-                            
-                            threading.Thread(target=grant_dev_item, args=(renderer.server_input, persisted_session_id), daemon=True).start()
+                        threading.Thread(target=grant_dev_item, args=(renderer.server_input, persisted_session_id, item_id), daemon=True).start()
 
-                        if action_or_result == "PAUSE_RESUME":
-                            renderer.state = "GAME"
-                            continue
+                    elif res in ("PAUSE_RESUME", "resume"):
+                        renderer.state = "GAME"
 
-                        if action_or_result == "PAUSE_EXIT_ROOM":
-                            # Explicit exit room: detach player from room on server, return to menu.
-                            renderer.state = "MENU"
-                            state = GameState()  # Reset local
-                            renderer.pause_route = []
-                            if net:
-                                try:
-                                    net.send({"type": 1015, "payload": {}})
-                                except Exception:
-                                    pass
-                                net.clear_auto_join()
-                            persisted_last_room_id = ""
-                            persisted.pop("last_room_id", None)
-                            _save_client_state(persisted)
-                            continue
-                            
-                    else:
-                        action = renderer.handle_pause_click(event.pos)
-                        if action == "resume":
-                            renderer.state = "GAME"
-                        elif action == "settings":
-                            renderer.pause_push("settings")
-                        elif action == "help":
-                            renderer.pause_push("help")
-                        elif action == "item_manual":
-                            renderer.pause_push("item_manual")
-                        elif action == "quit":
-                            renderer.state = "MENU"
-                            state = GameState()  # Reset local
-                            renderer.pause_route = []
-                            if net:
-                                try:
-                                    net.send({"type": 1015, "payload": {}})
-                                except Exception:
-                                    pass
-                            # Keep last_room_id so the user can re-join via "加入行动".
+                    elif res == "PAUSE_EXIT_ROOM" or res == "quit":
+                        # Explicit exit room: detach player from room on server, return to menu.
+                        renderer.state = "MENU"
+                        state = GameState()  # Reset local
+                        renderer.pause_route = []
+                        if net:
+                            try:
+                                net.send({"type": 1015, "payload": {}})
+                            except Exception:
+                                pass
+                            net.clear_auto_join()
+                        persisted_last_room_id = ""
+                        persisted.pop("last_room_id", None)
+                        _save_client_state(persisted)
+
+                    elif res == "settings":
+                        renderer.pause_push("settings")
+                    elif res == "help":
+                        renderer.pause_push("help")
+                    elif res == "item_manual":
+                        renderer.pause_push("item_manual")
 
                 elif event.type == pygame.MOUSEWHEEL:
                     if renderer.pause_view() == "item_manual":

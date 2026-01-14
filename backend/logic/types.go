@@ -111,6 +111,10 @@ type Player struct {
 	// ClientMsg is an ephemeral message intended for the owning client UI only.
 	// It should not be used for global announcements.
 	ClientMsg string `json:"client_msg,omitempty"`
+	
+	// LastAIAction is a persistent summary of the last action taken by the AI for this player.
+	// Rendered independently on the HUD.
+	LastAIAction string `json:"last_ai_action,omitempty"`
 
 	// Timed buffs (server-authoritative).
 	BuffSpeedMult            float64   `json:"-"`
@@ -173,7 +177,6 @@ type GameConfig struct {
 	Map struct {
 		Width       int     `json:"width"`
 		Height      int     `json:"height"`
-		AOIGridSize int     `json:"aoi_grid_size"`
 		WallDensity float64 `json:"wall_density"`
 	} `json:"map"`
 	Gameplay struct {
@@ -192,17 +195,43 @@ type GameConfig struct {
 		WeightThresholdNoiseDouble float64 `json:"weight_threshold_noise_double"`
 		WeightThresholdViewReduce  float64 `json:"weight_threshold_view_reduce"`
 		WeightThresholdImmobilize  float64 `json:"weight_threshold_immobilize"`
+		RespawnTimeSec             float64 `json:"respawn_time_sec"`
+		RespawnFarDistance         float64 `json:"respawn_far_distance"`
+		ItemDurations              struct {
+			PhaseShiftSec   float64 `json:"phase_shift_sec"`
+			PurgeSec        float64 `json:"purge_sec"`
+			ReconScopeSec   float64 `json:"recon_scope_sec"`
+			ReconSensorSec  float64 `json:"recon_sensor_sec"`
+			ReconScannerSec float64 `json:"recon_scanner_sec"`
+			BlinkDistance   float64 `json:"blink_distance"`
+			StealthSec      float64 `json:"stealth_sec"`
+		} `json:"item_durations"`
 	} `json:"gameplay"`
 	Items struct {
-		InitialWorldItemCount int     `json:"initial_world_item_count"`
-		RespawnIntervalSec    float64 `json:"respawn_interval_sec"`
-		MerchantStockSize     int     `json:"merchant_stock_size"`
-		MerchantRefreshCost   int     `json:"merchant_refresh_cost"`
-		MaxWorldItemCount     struct {
+		InitialWorldItemCount     int     `json:"initial_world_item_count"`
+		RespawnIntervalSec        float64 `json:"respawn_interval_sec"`
+		MerchantStockSize         int     `json:"merchant_stock_size"`
+		MerchantRefreshCost       int     `json:"merchant_refresh_cost"`
+		MerchantSpawnSearchRadius int     `json:"merchant_spawn_search_radius"`
+		DefaultSellValue          int     `json:"default_sell_value"`
+		DefaultBuyMultiplier      int     `json:"default_buy_multiplier"`
+		PickupRange               float64 `json:"pickup_range"`
+		FundsGainMin              int     `json:"funds_gain_min"`
+		FundsGainMax              int     `json:"funds_gain_max"`
+		ShopMaxAttempts           int     `json:"shop_max_attempts"`
+		ShopT4Chance              float64 `json:"shop_t4_chance"`
+		SupplyDropT4Chance        float64 `json:"supply_drop_t4_chance"`
+		SupplyDropFundsBase       int     `json:"supply_drop_funds_base"`
+		MaxWorldItemCount         struct {
 			Phase1 int `json:"phase_1"`
 			Phase2 int `json:"phase_2"`
 			Phase3 int `json:"phase_3"`
 		} `json:"max_world_item_count"`
+		SupplyDropCount struct {
+			Phase1 int `json:"phase_1"`
+			Phase2 int `json:"phase_2"`
+			Phase3 int `json:"phase_3"`
+		} `json:"supply_drop_count"`
 		TierWeightsByPhase struct {
 			Phase1 struct {
 				T1 float64 `json:"tier_1"`
@@ -229,13 +258,23 @@ type GameConfig struct {
 	} `json:"items"`
 	AI struct {
 		NingBye struct {
-			HP               float64 `json:"hp"`
-			Armor            float64 `json:"armor"`
-			MoveSpeed        float64 `json:"move_speed"`
-			Damage           float64 `json:"damage"`
-			ArmorPenetration float64 `json:"armor_penetration"`
-			ReloadTimeSec    float64 `json:"reload_time_sec"`
-			SensingRadiusRatio float64 `json:"sensing_radius_ratio"`
+			HP                    float64 `json:"hp"`
+			Armor                 float64 `json:"armor"`
+			MoveSpeed             float64 `json:"move_speed"`
+			Damage                float64 `json:"damage"`
+			ArmorPenetration      float64 `json:"armor_penetration"`
+			ReloadTimeSec         float64 `json:"reload_time_sec"`
+			SensingRadiusRatio    float64 `json:"sensing_radius_ratio"`
+			PulseIntervalSec      float64 `json:"pulse_interval_sec"`
+			LegendaryDropChance   float64 `json:"legendary_drop_chance"`
+			LostTargetTimeoutSec  float64 `json:"lost_target_timeout_sec"`
+			ThreatScanDistance    float64 `json:"threat_scan_distance"`
+			ProjectileSpeed       float64 `json:"projectile_speed"`
+			ProjectileRadius      float64 `json:"projectile_radius"`
+			ProjectileLifetimeSec float64 `json:"projectile_lifetime_sec"`
+			ProjectileSpawnOffset float64 `json:"projectile_spawn_offset"`
+			ArrivalDistance       float64 `json:"arrival_distance"`
+			PathfindingMaxSteps   int     `json:"pathfinding_max_steps"`
 		} `json:"ning_bye"`
 	} `json:"ai"`
 	Tactics struct {
@@ -276,6 +315,13 @@ type GameConfig struct {
 		DefaultBounces           int     `json:"default_bounces"`
 		AdvancedReconDurationSec float64 `json:"advanced_recon_duration_sec"`
 		AttackRequiresVision     bool    `json:"attack_requires_vision"`
+		ProjectileSpeed          float64 `json:"projectile_speed"`
+		ProjectileRadius         float64 `json:"projectile_radius"`
+		AmmoAPDamage             float64 `json:"ammo_ap_damage"`
+		AmmoBounceDamage         float64 `json:"ammo_bounce_damage"`
+		AmmoBounceBonus          int     `json:"ammo_bounce_bonus"`
+		RailgunDamage            float64 `json:"railgun_damage"`
+		RailgunTrapPenetration   float64 `json:"railgun_trap_penetration"`
 	} `json:"combat"`
 	Phases struct {
 		Thresholds struct {
@@ -301,5 +347,8 @@ type GameConfig struct {
 			GlobalPulseIntervalSec    int     `json:"global_pulse_interval_sec"`
 			ViewRadiusDecayRatePerSec float64 `json:"view_radius_decay_rate_per_sec"`
 		} `json:"phase_3_escape"`
+		Phase4 struct {
+			DurationSec int `json:"duration_sec"`
+		} `json:"phase_4_ended"`
 	} `json:"phases"`
 }

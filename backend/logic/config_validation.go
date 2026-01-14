@@ -46,7 +46,6 @@ func ClampGameConfig(cfg *GameConfig) {
 	// --- map ---
 	cfg.Map.Width = clampInt(cfg.Map.Width, 16, 256)
 	cfg.Map.Height = clampInt(cfg.Map.Height, 16, 256)
-	cfg.Map.AOIGridSize = clampInt(cfg.Map.AOIGridSize, 4, 64)
 	cfg.Map.WallDensity = clampFloat(cfg.Map.WallDensity, 0.0, 0.6)
 
 	// --- gameplay ---

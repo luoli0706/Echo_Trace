@@ -294,8 +294,12 @@ func (gs *GameState) generateShopStock(phaseIdx int, tactic string) []string {
 	stock := make([]string, 0, count)
 	seen := map[string]bool{}
 
-	// Phase 3: 10% Chance for T4 Item
-	if phaseIdx >= 3 && rand.Float64() < 0.10 {
+	// Phase 3: Chance for T4 Item
+	t4Chance := 0.10
+	if gs.Config != nil && gs.Config.Items.ShopT4Chance > 0 {
+		t4Chance = gs.Config.Items.ShopT4Chance
+	}
+	if phaseIdx >= 3 && rand.Float64() < t4Chance {
 		t4Items := []string{}
 		for id, it := range ItemDB {
 			if it.Tier == 4 {
@@ -310,7 +314,11 @@ func (gs *GameState) generateShopStock(phaseIdx int, tactic string) []string {
 	}
 
 	// Try to build a diverse stock; cap attempts to avoid infinite loops.
-	for attempts := 0; len(stock) < count && attempts < 200; attempts++ {
+	maxAttempts := 200
+	if gs.Config != nil && gs.Config.Items.ShopMaxAttempts > 0 {
+		maxAttempts = gs.Config.Items.ShopMaxAttempts
+	}
+	for attempts := 0; len(stock) < count && attempts < maxAttempts; attempts++ {
 		cat := gs.pickLootCategory(phaseIdx, tactic)
 		tier := gs.pickLootTier(phaseIdx)
 		id, ok := gs.pickItemID(cat, tier)
@@ -379,8 +387,12 @@ func (gs *GameState) SpawnSupplyDrop(pos Vector2, phase int) {
 
 	items := []Item{}
 
-	// 5% Chance for T4 Item (Legendary)
-	if rand.Float64() < 0.05 {
+	// Chance for T4 Item (Legendary)
+	t4Chance := 0.05
+	if gs.Config != nil && gs.Config.Items.SupplyDropT4Chance > 0 {
+		t4Chance = gs.Config.Items.SupplyDropT4Chance
+	}
+	if rand.Float64() < t4Chance {
 		t4Items := []string{}
 		for id, it := range ItemDB {
 			if it.Tier == 4 {
@@ -416,7 +428,11 @@ func (gs *GameState) SpawnSupplyDrop(pos Vector2, phase int) {
 		return
 	}
 
-	drop := SupplyDropData{Funds: 500 * targetTier, Items: items}
+	fundsBase := 500
+	if gs.Config != nil && gs.Config.Items.SupplyDropFundsBase > 0 {
+		fundsBase = gs.Config.Items.SupplyDropFundsBase
+	}
+	drop := SupplyDropData{Funds: fundsBase * targetTier, Items: items}
 
 	uid := NewUID()
 	gs.Entities[uid] = Entity{
@@ -449,6 +465,9 @@ func (gs *GameState) HandlePickup(playerID string) {
 	}
 
 	pickupRange := 1.5
+	if gs.Config != nil && gs.Config.Items.PickupRange > 0 {
+		pickupRange = gs.Config.Items.PickupRange
+	}
 	var targetUID = ""
 
 	for uid, e := range gs.Entities {
@@ -468,8 +487,21 @@ func (gs *GameState) HandlePickup(playerID string) {
 				item := ent.Extra.(Item)
 				p.Inventory = append(p.Inventory, item)
 
-				// Random Funds 20-80
-				gain := 20 + rand.Intn(61)
+				// Random Funds
+				minFunds := 20
+				maxFunds := 80
+				if gs.Config != nil {
+					if gs.Config.Items.FundsGainMin > 0 {
+						minFunds = gs.Config.Items.FundsGainMin
+					}
+					if gs.Config.Items.FundsGainMax > 0 {
+						maxFunds = gs.Config.Items.FundsGainMax
+					}
+				}
+				if maxFunds < minFunds {
+					maxFunds = minFunds
+				}
+				gain := minFunds + rand.Intn(maxFunds-minFunds+1)
 				p.Funds += gain
 
 				delete(gs.Entities, targetUID)
@@ -599,35 +631,55 @@ func (gs *GameState) HandleUseItem(playerID string, slotIndex int) {
 
 	case "SURV_PHASE_SHIFT":
 		// 3.0s Invincible, cannot shoot (Handled in HandleFire check)
-		p.BuffInvincibleUntil = time.Now().Add(3 * time.Second)
+		dur := 3.0
+		if gs.Config != nil && gs.Config.Gameplay.ItemDurations.PhaseShiftSec > 0 {
+			dur = gs.Config.Gameplay.ItemDurations.PhaseShiftSec
+		}
+		p.BuffInvincibleUntil = time.Now().Add(time.Duration(dur * float64(time.Second)))
 		used = true
 
 	case "SURV_PURGE":
 		// 2.0s Invincible + Clear Debuffs
-		p.BuffInvincibleUntil = time.Now().Add(2 * time.Second)
+		dur := 2.0
+		if gs.Config != nil && gs.Config.Gameplay.ItemDurations.PurgeSec > 0 {
+			dur = gs.Config.Gameplay.ItemDurations.PurgeSec
+		}
+		p.BuffInvincibleUntil = time.Now().Add(time.Duration(dur * float64(time.Second)))
 		// Clear debuffs (if any implemented later, e.g. Track Dart)
 		used = true
 
 	// --- Recon ---
 	case "RECON_SCOPE":
 		// +20% View Radius for 15s
+		dur := 15.0
+		if gs.Config != nil && gs.Config.Gameplay.ItemDurations.ReconScopeSec > 0 {
+			dur = gs.Config.Gameplay.ItemDurations.ReconScopeSec
+		}
 		p.BuffViewBonus = p.ViewRadius * 0.20 * reconMult
-		p.BuffViewUntil = time.Now().Add(15 * time.Second)
+		p.BuffViewUntil = time.Now().Add(time.Duration(dur * float64(time.Second)))
 		used = true
 
 	case "RECON_SENSOR":
 		// Rear Vision (Client side rendering trick)
-		p.BuffVisionInvertUntil = time.Now().Add(10 * time.Second)
+		dur := 10.0
+		if gs.Config != nil && gs.Config.Gameplay.ItemDurations.ReconSensorSec > 0 {
+			dur = gs.Config.Gameplay.ItemDurations.ReconSensorSec
+		}
+		p.BuffVisionInvertUntil = time.Now().Add(time.Duration(dur * float64(time.Second)))
 		used = true
 
 	case "RECON_SCANNER":
 		// Global Scan: Reveal nearest enemy to EVERYONE
+		dur := 30.0
+		if gs.Config != nil && gs.Config.Gameplay.ItemDurations.ReconScannerSec > 0 {
+			dur = gs.Config.Gameplay.ItemDurations.ReconScannerSec
+		}
 		target := gs.findNearestEnemy(p, 9999.0)
 		if target != nil {
 			gs.addEvent("SCAN", fmt.Sprintf("SCAN DETECTED: %s at [%d, %d]", target.Name, int(target.Pos.X), int(target.Pos.Y)))
 			// Also set a buff on self to show UI indicator?
 			// Or just the global event is enough for Alpha.
-			p.BuffScanUntil = time.Now().Add(30 * time.Second)
+			p.BuffScanUntil = time.Now().Add(time.Duration(dur * float64(time.Second)))
 			used = true
 		} else {
 			p.ClientMsg = "No targets found."
@@ -637,6 +689,9 @@ func (gs *GameState) HandleUseItem(playerID string, slotIndex int) {
 	case "UTIL_BLINK":
 		// Teleport 2.0m forward
 		dist := 2.0
+		if gs.Config != nil && gs.Config.Gameplay.ItemDurations.BlinkDistance > 0 {
+			dist = gs.Config.Gameplay.ItemDurations.BlinkDistance
+		}
 		dx := p.LookDir.X * dist
 		dy := p.LookDir.Y * dist
 		dest := Vector2{X: p.Pos.X + dx, Y: p.Pos.Y + dy}
@@ -659,7 +714,11 @@ func (gs *GameState) HandleUseItem(playerID string, slotIndex int) {
 
 	case "UTIL_STEALTH":
 		// Invisible for 15s
-		p.BuffInvisibleUntil = time.Now().Add(15 * time.Second)
+		dur := 15.0
+		if gs.Config != nil && gs.Config.Gameplay.ItemDurations.StealthSec > 0 {
+			dur = gs.Config.Gameplay.ItemDurations.StealthSec
+		}
+		p.BuffInvisibleUntil = time.Now().Add(time.Duration(dur * float64(time.Second)))
 		used = true
 	}
 

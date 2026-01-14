@@ -58,7 +58,11 @@ func (gs *GameState) UpdateNingByeAI(dt float64) {
 			if aiData.LostTargetTime.IsZero() {
 				aiData.LostTargetTime = now
 			}
-			if now.Sub(aiData.LostTargetTime).Seconds() > 3.0 {
+			timeout := 3.0
+			if gs.Config != nil && gs.Config.AI.NingBye.LostTargetTimeoutSec > 0 {
+				timeout = gs.Config.AI.NingBye.LostTargetTimeoutSec
+			}
+			if now.Sub(aiData.LostTargetTime).Seconds() > timeout {
 				log.Println("[AI] Lost target, returning to patrol.")
 				aiData.State = AIStatePatrol
 				aiData.CombatTargetID = ""
@@ -115,8 +119,12 @@ func (gs *GameState) scanForThreat(pos Vector2, radius float64) *Player {
 		// Condition 1: Explicit Threat Flag (within sensing radius)
 		isTarget := p.IsThreat && dist2 <= minDist
 
-		// Condition 2: Too Close (Self-Defense, 3.0m)
-		if !isTarget && dist2 <= 9.0 {
+		// Condition 2: Too Close (Self-Defense)
+		distThreshold := 3.0
+		if gs.Config != nil && gs.Config.AI.NingBye.ThreatScanDistance > 0 {
+			distThreshold = gs.Config.AI.NingBye.ThreatScanDistance
+		}
+		if !isTarget && dist2 <= distThreshold*distThreshold {
 			isTarget = true
 		}
 
@@ -159,14 +167,31 @@ func (gs *GameState) aiCombatBehavior(ent *Entity, data *NingByeAI, target *Play
 	}
 
 	speed := 12.0
+	radius := 0.4
+	lifetimeSec := 5.0
+	spawnOffset := 0.8
+	if gs.Config != nil {
+		if gs.Config.AI.NingBye.ProjectileSpeed > 0 {
+			speed = gs.Config.AI.NingBye.ProjectileSpeed
+		}
+		if gs.Config.AI.NingBye.ProjectileRadius > 0 {
+			radius = gs.Config.AI.NingBye.ProjectileRadius
+		}
+		if gs.Config.AI.NingBye.ProjectileLifetimeSec > 0 {
+			lifetimeSec = gs.Config.AI.NingBye.ProjectileLifetimeSec
+		}
+		if gs.Config.AI.NingBye.ProjectileSpawnOffset > 0 {
+			spawnOffset = gs.Config.AI.NingBye.ProjectileSpawnOffset
+		}
+	}
 	uid := NewUID()
 
 	proj := ProjectileData{
 		OwnerID:          "AI_NINGBYE",
 		Velocity:         Vector2{X: dir.X * speed, Y: dir.Y * speed},
 		Damage:           data.Damage,
-		Radius:           0.4,
-		Lifetime:         now.Add(5 * time.Second),
+		Radius:           radius,
+		Lifetime:         now.Add(time.Duration(lifetimeSec * float64(time.Second))),
 		BouncesLeft:      0,
 		ArmorPenetration: data.ArmorPenetration,
 	}
@@ -174,7 +199,7 @@ func (gs *GameState) aiCombatBehavior(ent *Entity, data *NingByeAI, target *Play
 	gs.Entities[uid] = Entity{
 		UID:   uid,
 		Type:  EntityTypeProjectile,
-		Pos:   Vector2{X: ent.Pos.X + dir.X*0.8, Y: ent.Pos.Y + dir.Y*0.8}, // Spawn offset
+		Pos:   Vector2{X: ent.Pos.X + dir.X*spawnOffset, Y: ent.Pos.Y + dir.Y*spawnOffset}, // Spawn offset
 		State: 1,
 		Extra: proj,
 	}
@@ -184,8 +209,12 @@ func (gs *GameState) aiMoveBehavior(ent *Entity, data *NingByeAI, dt float64) {
 	// If Command Move, check if we have a path to TargetPos
 	if data.State == AIStateCommandMove {
 		// Check arrival
+		arrivalDist := 0.5
+		if gs.Config != nil && gs.Config.AI.NingBye.ArrivalDistance > 0 {
+			arrivalDist = gs.Config.AI.NingBye.ArrivalDistance
+		}
 		dist := Distance(ent.Pos, data.TargetPos)
-		if dist < 0.5 {
+		if dist < arrivalDist {
 			log.Println("[AI] Command target reached. Switching to Patrol.")
 			data.State = AIStatePatrol
 			data.TargetPos = Vector2{}
@@ -271,7 +300,11 @@ func (gs *GameState) findPath(start, end Vector2) []Vector2 {
 
 	// Max steps to prevent lag
 	steps := 0
-	for len(queue) > 0 && steps < 500 {
+	maxSteps := 500
+	if gs.Config != nil && gs.Config.AI.NingBye.PathfindingMaxSteps > 0 {
+		maxSteps = gs.Config.AI.NingBye.PathfindingMaxSteps
+	}
+	for len(queue) > 0 && steps < maxSteps {
 		curr := queue[0]
 		queue = queue[1:]
 		steps++
