@@ -769,12 +769,18 @@ backend/
 │   │   └── aoi.go          # 视野管理（AOI）
 │   ├── pathfinding/
 │   │   └── astar.go        # A* 寻路算法
+│   ├── logic/
+│   │   ├── config_loader.go # 配置文件加载
+│   │   └── types.go        # 数据结构定义
 │   └── storage/
 │       └── database.go     # SQLite 数据库
 ├── proto/
 │   └── echo_trace.pb.go    # Protobuf 生成代码
-└── config/
-    └── config.go           # 配置文件解析
+└── config/                 # 配置文件 (JSON)
+    ├── server.json
+    ├── gameplay.json
+    ├── items.json
+    └── ...
 ```
 
 ### Frontend 结构
@@ -846,6 +852,29 @@ class NetworkClient:
                 # JSON 消息
                 self._handle_json(message)
 ```
+
+---
+
+## ⚙️ Configuration
+
+Echo Trace 使用集中式的 JSON 配置系统，位于项目根目录的 `config/` 文件夹下。
+
+### 配置文件列表
+
+| 文件名 | 用途 |
+|--------|------|
+| `server.json` | 服务器基础设置（端口、TickRate、房间上限） |
+| `map.json` | 地图生成参数（大小、墙体密度） |
+| `gameplay.json` | 核心玩法参数（背包、视野、负重、道具持续时间） |
+| `items.json` | 道具系统配置（刷新率、商店价格、稀有度权重） |
+| `ai.json` | AI Boss (柠白号) 的属性和行为参数 |
+| `tactics.json` | 战术倾向（RECON/DEFENSE/TRAP）的加成系数 |
+| `combat.json` | 战斗数值（伤害、弹道速度、冷却时间） |
+| `phases.json` | 游戏阶段时长和触发条件 |
+
+### 修改配置
+修改 JSON 文件后，重启游戏服务器即可生效。
+`backend/logic/config_loader.go` 负责在启动时加载并合并这些配置。
 
 ---
 

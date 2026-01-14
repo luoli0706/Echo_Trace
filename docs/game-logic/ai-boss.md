@@ -522,19 +522,19 @@ for _, e := range nearbyEntities {
 
 ## 配置参数
 
-**后端配置** (`backend/config/game.json`):
+**后端配置** (`config/ai.json`):
 ```json
 {
   "ai": {
-    "ningbye": {
-      "hp": 300,
-      "armor": 150,
-      "move_speed": 4.0,
-      "damage": 40,
-      "armor_penetration": 0.3,
-      "reload_time_sec": 0.25,
-      "sensing_radius": 15.0,
-      "lost_target_timeout": 3.0
+    "ning_bye": {
+      "hp": 2000.0,
+      "armor": 50.0,
+      "move_speed": 5.0,
+      "damage": 50.0,
+      "armor_penetration": 0.5,
+      "reload_time_sec": 1.5,
+      "sensing_radius_ratio": 1.5,
+      "lost_target_timeout_sec": 3.0
     }
   }
 }

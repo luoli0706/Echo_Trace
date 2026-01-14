@@ -6,7 +6,7 @@
 
 [![Go](https://img.shields.io/badge/Go-1.23+-00ADD8?logo=go)](https://golang.org/)
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python)](https://python.org/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 [功能特性](#-功能特性) • [快速开始](#-快速开始) • [文档](#-文档)
 
@@ -154,7 +154,7 @@ npm run docs:dev
 ---
 ## 📄 许可证
 
-本项目采用 **MIT License** 开源协议。详见 [LICENSE](LICENSE) 文件。
+本项目采用 **Apache License 2.0** 开源协议。详见 [LICENSE](LICENSE) 文件。
 
 ---
 
