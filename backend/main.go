@@ -94,6 +94,7 @@ func main() {
 	mux.HandleFunc("/admin/player/threat", handleAdminSetThreat)
 	mux.HandleFunc("/admin/player/move", handleAdminMovePlayer)
 	mux.HandleFunc("/admin/ai/command", handleAdminCommandAI)
+	mux.HandleFunc("/admin/room/players", handleAdminGetRoomPlayers)
 
 	// 4. Start Server
 	addr := ":" + *port

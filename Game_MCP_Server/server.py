@@ -115,6 +115,10 @@ def move_player_to_coordinate(session_id: str, x: float, y: float) -> str:
     """Move a player to a target coordinate (server validates collision)."""
     return _call_backend("/admin/player/move", {"session_id": session_id, "x": x, "y": y})
 
+def get_room_players(session_id: str) -> str:
+    """Get list of all players in the same room (ID, Name, Pos)."""
+    return _call_backend("/admin/room/players", {"session_id": session_id})
+
 def sanitize_plain_text(text: str) -> str:
     if not text:
         return ""
@@ -132,10 +136,21 @@ def sanitize_plain_text(text: str) -> str:
 # --- FastAPI App ---
 app = FastAPI()
 
+class PlayerInfo(BaseModel):
+    pos_x: float
+    pos_y: float
+    hp: float
+    max_hp: float
+    armor: float
+    funds: int
+    name: str
+    is_dead: bool | None = False
+
 class WishRequest(BaseModel):
     session_id: str
     wish: str
     item_id: str | None = None
+    player_info: PlayerInfo | None = None
 
 # Manually construct OpenAI-compatible tool definitions based on our mcp tools
 # (Since we know what they are, hardcoding schema is safer than relying on internal fastmcp APIs for this demo)
@@ -159,7 +174,7 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "modify_global_health",
-            "description": "[T4 Exclusive] Set the HP of ALL players in the game.",
+            "description": "[T4 Exclusive] Set the health of ALL players in the game.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -268,7 +283,7 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "move_player_to_coordinate",
-            "description": "[T4 Exclusive] Move a player to a target coordinate. Use when user asks to relocate someone to X,Y.",
+            "description": "[T4] Move any player. [T2] Move SELF only.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -277,6 +292,20 @@ TOOLS_SCHEMA = [
                     "y": {"type": "number", "description": "Target Y coordinate"}
                 },
                 "required": ["session_id", "x", "y"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_room_players",
+            "description": "Get list of players in the room (SessionID, Name, X, Y). Use to find target player's ID/Coords for teleporting.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Requester's session_id"}
+                },
+                "required": ["session_id"]
             }
         }
     }
@@ -292,7 +321,8 @@ TOOL_MAP = {
     "modify_special_attribute": modify_special_attribute,
     "set_player_threat": set_player_threat,
     "command_ai_patrol": command_ai_patrol,
-    "move_player_to_coordinate": move_player_to_coordinate
+    "move_player_to_coordinate": move_player_to_coordinate,
+    "get_room_players": get_room_players
 }
 
 @app.post("/wish")
@@ -311,12 +341,20 @@ def process_wish(req: WishRequest):
     for t in TOOLS_SCHEMA:
         name = t["function"]["name"]
         
-        # T4 Exclusive Tools
-        if name in ("move_player_to_coordinate", "modify_global_health", "command_ai_patrol", "set_player_threat"):
+        # T4 Exclusive Tools logic update:
+        # T2 can now use 'move_player_to_coordinate' but logically restricted in prompt/checks.
+        # Strict T4 exclusives: modify_global_health, command_ai_patrol, set_player_threat
+        if name in ("modify_global_health", "command_ai_patrol", "set_player_threat"):
             if not is_t4:
                 continue # Skip for T2
         
         allowed_tools.append(t)
+
+    # Player Status Context
+    player_status_str = "Unknown"
+    if req.player_info:
+        p = req.player_info
+        player_status_str = f"Pos({p.pos_x:.1f}, {p.pos_y:.1f}), HP {p.hp}/{p.max_hp}, Armor {p.armor}, Funds ${p.funds}"
 
     # Context Prompt
     permission_context = ""
@@ -329,9 +367,11 @@ def process_wish(req: WishRequest):
     else:
         permission_context = """
         TIER 2 ACCESS (RESTRICTED):
-        - You can ONLY modify self stats (HP, Armor, Speed) and spawn items up to Tier 3.
-        - You CANNOT move players, command AI, or spawn Tier 4 items.
-        - If the user asks for restricted actions, politely deny them citing 'Insufficient Permissions (Tier 2 Device)'.
+        - You can modify SELF stats (HP, Armor, Speed) and spawn items up to Tier 3.
+        - You CAN TELEPORT YOURSELF ('move_player_to_coordinate' with your session_id).
+        - You CANNOT teleport OTHERS.
+        - You CANNOT command AI, modify global stats, or spawn Tier 4 items.
+        - If the user asks for restricted actions, politely deny them citing 'Insufficient Permissions'.
         """
 
     # 1. Call LLM
@@ -341,6 +381,7 @@ def process_wish(req: WishRequest):
 CRITICAL RULES:
 - Device Used: {device_name}.
 - Wishing Player Session ID: '{req.session_id}'.
+- Wishing Player Status: {player_status_str}.
 - Do NOT ask confirmation. Act or Deny.
 - If impossible/denied, reply with short plain-text reason.
 - **IMPORTANT**: At the very end of your text response, provide a very concise summary (max 10 words) of what you actually did, prefixed with '[[SUMMARY]]'.
@@ -418,7 +459,14 @@ If valid, execute. If ambiguous, guess."""},
                 if "session_id" not in args and "session_id" in tc["function"]["arguments"]: 
                      pass
                 
-                if not is_t4 and func_name in ("move_player_to_coordinate", "modify_global_health"):
+                # Validation: T2 can only teleport SELF
+                if not is_t4 and func_name == "move_player_to_coordinate":
+                    target_sid = args.get("session_id")
+                    if target_sid != req.session_id:
+                        results.append(f"{func_name}: DENIED (Tier 2 can only teleport self)")
+                        continue
+
+                if not is_t4 and func_name in ("modify_global_health", "command_ai_patrol", "set_player_threat"):
                      results.append(f"{func_name}: DENIED (Tier 2 Restriction)")
                      continue
 

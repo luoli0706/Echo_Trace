@@ -416,6 +416,7 @@ func handleWish(w http.ResponseWriter, r *http.Request) {
 	found := false
 	consumed := false
 	consumedItemID := ""
+	var playerInfoSnapshot map[string]interface{}
 
 	roomIDs := network.GlobalManager.ListRooms()
 	for _, rid := range roomIDs {
@@ -445,6 +446,18 @@ func handleWish(w http.ResponseWriter, r *http.Request) {
 					p.Inventory = append(p.Inventory[:slotIdx], p.Inventory[slotIdx+1:]...)
 					gs.RecalculateStats(p)
 					consumed = true
+					
+					// Snapshot player data for MCP
+					playerInfoSnapshot = map[string]interface{}{
+						"pos_x":   p.Pos.X,
+						"pos_y":   p.Pos.Y,
+						"hp":      p.HP,
+						"max_hp":  p.MaxHP,
+						"armor":   p.Armor,
+						"funds":   p.Funds,
+						"name":    p.Name,
+						"is_dead": p.IsDead,
+					}
 				}
 			}
 			gs.Mutex.Unlock()
@@ -471,14 +484,17 @@ func handleWish(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Async call to MCP
-	go func(sid, wText string, itemID string) {
+	go func(sid, wText string, itemID string, info map[string]interface{}) {
 		setPlayerClientMsg(sid, "Wish received. Processing...")
 		mcpURL := "http://localhost:9091/wish"
-		bodyData := map[string]string{
-			"session_id": sid,
-			"wish":       wText,
-			"item_id":    itemID,
+		
+		bodyData := map[string]interface{}{
+			"session_id":  sid,
+			"wish":        wText,
+			"item_id":     itemID,
+			"player_info": info,
 		}
+		
 		jsonData, _ := json.Marshal(bodyData)
 		client := &http.Client{Timeout: 12 * time.Second}
 		resp, err := client.Post(mcpURL, "application/json", bytes.NewBuffer(jsonData))
@@ -511,7 +527,71 @@ func handleWish(w http.ResponseWriter, r *http.Request) {
 			msg = "Wish processed."
 		}
 		setPlayerClientMsg(sid, msg)
-	}(req.SessionID, req.Wish, consumedItemID)
+	}(req.SessionID, req.Wish, consumedItemID, playerInfoSnapshot)
 
 	w.Write([]byte("Wish granted (Item Consumed)."))
+}
+
+type RoomPlayersRequest struct {
+	SessionID string `json:"session_id"`
+}
+
+type PlayerSummary struct {
+	SessionID string  `json:"session_id"`
+	Name      string  `json:"name"`
+	X         float64 `json:"x"`
+	Y         float64 `json:"y"`
+	IsAlive   bool    `json:"is_alive"`
+}
+
+func handleAdminGetRoomPlayers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req RoomPlayersRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	foundRoom := false
+	var summaries []PlayerSummary
+
+	roomIDs := network.GlobalManager.ListRooms()
+	for _, rid := range roomIDs {
+		room := network.GlobalManager.GetRoom(rid)
+		if room != nil && room.GameLoop != nil && room.GameLoop.GameState != nil {
+			gs := room.GameLoop.GameState
+			gs.Mutex.Lock()
+			// Check if requester is in this room
+			if _, ok := gs.Players[req.SessionID]; ok {
+				foundRoom = true
+				summaries = make([]PlayerSummary, 0, len(gs.Players))
+				for sid, p := range gs.Players {
+					summaries = append(summaries, PlayerSummary{
+						SessionID: sid,
+						Name:      p.Name,
+						X:         p.Pos.X,
+						Y:         p.Pos.Y,
+						IsAlive:   p.IsAlive,
+					})
+				}
+			}
+			gs.Mutex.Unlock()
+			if foundRoom {
+				break
+			}
+		}
+	}
+
+	if !foundRoom {
+		http.Error(w, "Player room not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"players": summaries,
+	})
 }

@@ -697,7 +697,30 @@ def execute_action(player_id: str, action: dict):
             "player_id": player_id,
             "amount": action["params"]["hp"]
         })
+    
+    elif action["action"] == "get_players":
+        # 获取房间内玩家列表
+        resp = requests.post(f"{GAME_SERVER_URL}/admin/room/players", json={
+            "session_id": player_id
+        })
+        return resp.json()["players"]
 ```
+
+### 新增工具与权限
+
+#### 工具列表
+
+1. **`get_room_players`**: 获取同房间玩家列表（ID、坐标、存活状态）。
+2. **`move_player_to_coordinate`**: 传送指定玩家到坐标。
+
+#### 权限限制 (T2 vs T4)
+
+| 道具等级 | 工具 | 权限限制 |
+|---------|------|----------|
+| **T2 (残缺许愿机)** | `move_player_to_coordinate` | **仅限传送自己** (Session ID 必须匹配) |
+| **T2** | `get_room_players` | 允许 |
+| **T4 (开发者 CLI)** | `move_player_to_coordinate` | **允许传送任何人** |
+| **T4** | `modify_global_health` | 允许 |
 
 ### 安全限制
 
